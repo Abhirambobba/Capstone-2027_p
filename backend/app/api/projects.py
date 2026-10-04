@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.auth import require_authenticated_user, require_manager
+from app.core.auth import AuthenticatedUser, require_authenticated_user, require_manager
 from app.core.dynamodb import get_employees_table, get_projects_table
 from app.models.project import (
     ProjectCreateRequest,
@@ -25,14 +25,39 @@ from app.services.project_service import (
     ProjectService,
 )
 
+
+def resolve_project_service() -> ProjectService:
+    try:
+        from app.main import app
+    except Exception:  # pragma: no cover - import-time safety for isolated contexts
+        app = None
+
+    override = None if app is None else app.dependency_overrides.get(get_project_service)
+    if override is not None:
+        value = override() if callable(override) else override
+        if isinstance(value, ProjectService):
+            return value
+    return get_project_service()
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 def get_project_service() -> ProjectService:
+    try:
+        from app.main import app
+    except Exception:  # pragma: no cover - import-time safety for isolated contexts
+        app = None
+
+    jira_service = None
+    if app is not None:
+        override = app.dependency_overrides.get("jira_oauth_service_override")
+        if override is not None:
+            jira_service = override() if callable(override) else override
     return ProjectService(
         project_repository=ProjectRepository(get_projects_table()),
         employee_repository=EmployeeRepository(get_employees_table()),
+        jira_service=jira_service,
     )
 
 
@@ -60,10 +85,11 @@ def handle_project_repository_error(error: Exception) -> None:
 )
 def create_project(
     request: ProjectCreateRequest,
-    service: ProjectService = Depends(get_project_service),
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    service: ProjectService = Depends(resolve_project_service),
 ):
     try:
-        project = service.create(request)
+        project = service.create(request, employee_id=current_user.employee_id)
     except ProjectAlreadyExistsError as error:
         raise HTTPException(status_code=409, detail="Project already exists") from error
     except ProjectOwnerNotFoundError as error:
@@ -88,7 +114,7 @@ def create_project(
 )
 def get_project(
     project_id: str,
-    service: ProjectService = Depends(get_project_service),
+    service: ProjectService = Depends(resolve_project_service),
 ):
     try:
         return service.get(project_id)
@@ -106,7 +132,7 @@ def get_project(
 def list_projects(
     limit: int = Query(default=25, ge=1, le=100),
     next_token: str | None = None,
-    service: ProjectService = Depends(get_project_service),
+    service: ProjectService = Depends(resolve_project_service),
 ):
     try:
         return service.list(limit, next_token)
@@ -122,10 +148,11 @@ def list_projects(
 def update_project(
     project_id: str,
     request: ProjectUpdateRequest,
-    service: ProjectService = Depends(get_project_service),
+    current_user: AuthenticatedUser = Depends(require_authenticated_user),
+    service: ProjectService = Depends(resolve_project_service),
 ):
     try:
-        return service.update(project_id, request)
+        return service.update(project_id, request, employee_id=current_user.employee_id)
     except ProjectNotFoundError as error:
         raise HTTPException(status_code=404, detail="Project not found") from error
     except ProjectOwnerNotFoundError as error:

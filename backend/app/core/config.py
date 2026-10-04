@@ -12,6 +12,9 @@ class Settings:
     cognito_user_pool_id: str | None = None
     cognito_client_id: str | None = None
     cognito_region: str | None = None
+    jira_client_id: str | None = None
+    jira_client_secret: str | None = None
+    jira_callback_url: str | None = None
 
 
 def get_settings() -> Settings:
@@ -27,4 +30,7 @@ def get_settings() -> Settings:
         cognito_user_pool_id=os.getenv("COGNITO_USER_POOL_ID"),
         cognito_client_id=os.getenv("COGNITO_CLIENT_ID"),
         cognito_region=os.getenv("COGNITO_REGION"),
+        jira_client_id=os.getenv("JIRA_CLIENT_ID"),
+        jira_client_secret=os.getenv("JIRA_CLIENT_SECRET"),
+        jira_callback_url=os.getenv("JIRA_CALLBACK_URL"),
     )

@@ -180,3 +180,26 @@ def test_jira_metadata():
     response = client.post("/api/v1/management/projects", json=payload)
     assert response.status_code == 201
     assert response.json()["jira"]["project_key"] == "ASTRA"
+
+
+def test_jira_project_mapping_uses_authenticated_cloud_id_and_project_id():
+    class FakeJiraService:
+        def get_connection_for_employee(self, employee_id):
+            return {"cloud_id": "cloud-123", "access_token": "atlas-access"}
+
+        def list_projects_for_employee(self, employee_id):
+            return [{"id": "10001", "key": "KAN", "name": "Astra Engineering"}]
+
+    app.dependency_overrides["jira_oauth_service_override"] = FakeJiraService()
+    payload = project_payload(project_id="PROJ_002")
+    payload["jira"] = {
+        "provider": "jira",
+        "project_id": "10001",
+        "project_key": "KAN",
+    }
+    response = client.post("/api/v1/management/projects", json=payload)
+    assert response.status_code == 201
+    assert response.json()["jira"]["cloud_id"] == "cloud-123"
+    assert response.json()["jira"]["project_id"] == "10001"
+    assert response.json()["jira"]["project_key"] == "KAN"
+    app.dependency_overrides.pop("jira_oauth_service_override", None)

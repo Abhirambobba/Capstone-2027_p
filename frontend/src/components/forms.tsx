@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import type { Employee, Team } from "@/lib/types";
 
 const employeeSchema = z.object({ employee_id: z.string().min(1, "Employee ID is required"), name: z.string().min(1, "Name is required"), email: z.string().email("Enter a valid email"), role: z.string().min(1, "Role is required"), department: z.string().min(1, "Department is required"), manager_id: z.string(), employment_status: z.enum(["ACTIVE", "INACTIVE", "ON_LEAVE"]), access_role: z.enum(["MANAGER", "EMPLOYEE"]), cognito_user_id: z.string() });
-const projectSchema = z.object({ project_id: z.string().min(1, "Project ID is required"), name: z.string().min(1, "Name is required"), description: z.string(), owner_employee_id: z.string(), department: z.string(), status: z.enum(["PLANNED", "ACTIVE", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "ARCHIVED"]), github_organization: z.string(), github_repository: z.string(), github_repository_id: z.string(), github_default_branch: z.string(), github_installation_id: z.string(), jira_cloud_id: z.string(), jira_project_key: z.string() });
+const projectSchema = z.object({ project_id: z.string().min(1, "Project ID is required"), name: z.string().min(1, "Name is required"), description: z.string().default(""), owner_employee_id: z.string().default(""), department: z.string().default(""), status: z.enum(["PLANNED", "ACTIVE", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "ARCHIVED"]), github_organization: z.string().default(""), github_repository: z.string().default(""), github_repository_id: z.string().default(""), github_default_branch: z.string().default("main"), github_installation_id: z.string().default(""), jira_project_id: z.string().optional().default(""), jira_project_key: z.string().optional().default("") });
 const teamSchema = z.object({ team_id: z.string().min(1, "Team ID is required"), name: z.string().min(1, "Name is required"), description: z.string(), team_lead_id: z.string(), status: z.enum(["ACTIVE", "INACTIVE"]) });
 const membershipSchema = z.object({ employee_id: z.string().min(1, "Employee is required"), role: z.string().min(1, "Role is required"), allocation_percentage: z.coerce.number().min(0).max(100), team_id: z.string(), status: z.enum(["ACTIVE", "INACTIVE"]) });
 const taskSchema = z.object({ task_id: z.string().min(1, "Task ID is required"), title: z.string().min(1, "Title is required"), description: z.string(), jira_issue_key: z.string(), assignee_id: z.string(), team_id: z.string(), priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]), estimated_hours: z.coerce.number().min(0).nullable(), actual_hours: z.coerce.number().min(0), acceptance_criteria: z.string() });
@@ -23,9 +23,81 @@ export function EmployeeForm({ defaultValues, onSubmit, submitting, submitLabel 
   return <form className="form-panel" onSubmit={handleSubmit(onSubmit)}><label>Employee ID<input {...register("employee_id")} readOnly={Boolean(defaultValues?.employee_id)} /> <FieldError message={errors.employee_id?.message} /></label><label>Name<input {...register("name")} /> <FieldError message={errors.name?.message} /></label><label>Email<input type="email" {...register("email")} /> <FieldError message={errors.email?.message} /></label><label>Job role<input {...register("role")} /> <FieldError message={errors.role?.message} /></label><label>Department<input {...register("department")} /> <FieldError message={errors.department?.message} /></label><label>Manager ID<input {...register("manager_id")} /></label>{!defaultValues?.employee_id && <><label>Access role<select {...register("access_role")}><option value="EMPLOYEE">Employee</option><option value="MANAGER">Manager</option></select></label><label>Cognito user ID (sub)<input {...register("cognito_user_id")} /></label></>}<label>Employment status<select {...register("employment_status")}><option>ACTIVE</option><option>INACTIVE</option><option>ON_LEAVE</option></select></label><FormActions submitting={submitting} submitLabel={submitLabel} /></form>;
 }
 
-export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel = "Save project" }: FormProps<z.infer<typeof projectSchema>>) {
-  const { register, handleSubmit, formState: { errors } } = useForm<z.input<typeof projectSchema>, unknown, z.output<typeof projectSchema>>({ resolver: zodResolver(projectSchema), defaultValues: { project_id: "", description: "", owner_employee_id: "", department: "", status: "PLANNED", github_organization: "", github_repository: "", github_repository_id: "", github_default_branch: "main", github_installation_id: "", jira_cloud_id: "", jira_project_key: "", ...defaultValues } });
-  return <form className="form-panel" onSubmit={handleSubmit(onSubmit)}><label>Project ID<input {...register("project_id")} readOnly={Boolean(defaultValues?.project_id)} /> <FieldError message={errors.project_id?.message} /></label><label>Name<input {...register("name")} /> <FieldError message={errors.name?.message} /></label><label>Description<textarea {...register("description")} /></label><label>Owner employee ID<input {...register("owner_employee_id")} /></label><label>Department<input {...register("department")} /></label><label>Status<select {...register("status")}><option>PLANNED</option><option>ACTIVE</option><option>IN_PROGRESS</option><option>ON_HOLD</option><option>COMPLETED</option><option>ARCHIVED</option></select></label><p className="form-context">GitHub metadata (no secrets)</p><label>Organization<input {...register("github_organization")} /></label><label>Repository<input {...register("github_repository")} /></label><label>Repository ID<input {...register("github_repository_id")} /></label><label>Default branch<input {...register("github_default_branch")} /></label><label>Installation ID<input {...register("github_installation_id")} /></label><p className="form-context">Jira metadata (no secrets)</p><label>Cloud ID<input {...register("jira_cloud_id")} /></label><label>Project key<input {...register("jira_project_key")} /></label><FormActions submitting={submitting} submitLabel={submitLabel} /></form>;
+export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel = "Save project", autoLoadJiraProjects = false }: FormProps<z.infer<typeof projectSchema>> & { autoLoadJiraProjects?: boolean }) {
+  const { register, handleSubmit, setValue, watch, getValues, formState: { errors } } = useForm<z.input<typeof projectSchema>, unknown, z.output<typeof projectSchema>>({ resolver: zodResolver(projectSchema), defaultValues: { project_id: "", description: "", owner_employee_id: "", department: "", status: "PLANNED", github_organization: "", github_repository: "", github_repository_id: "", github_default_branch: "main", github_installation_id: "", jira_project_id: "", jira_project_key: "", ...defaultValues } });
+  const [jiraProjects, setJiraProjects] = useState<Array<{ id: string; key: string; name: string }>>([]);
+  const [jiraStatus, setJiraStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [jiraError, setJiraError] = useState<string | null>(null);
+  const selectedProjectId = watch("jira_project_id");
+
+  useEffect(() => {
+    const match = jiraProjects.find((project) => project.id === selectedProjectId);
+    if (match) {
+      setValue("jira_project_key", match.key, { shouldDirty: true });
+    }
+  }, [jiraProjects, selectedProjectId, setValue]);
+
+  useEffect(() => {
+    if (!autoLoadJiraProjects) return;
+    setJiraStatus("loading");
+    setJiraError(null);
+    void api.jiraProjects()
+      .then((result) => {
+        setJiraProjects(result.projects);
+        setJiraStatus(result.projects.length ? "ready" : "idle");
+      })
+      .catch((caught: unknown) => {
+        setJiraStatus("error");
+        setJiraError(caught instanceof Error ? caught.message : "Jira projects could not be loaded.");
+      });
+  }, [autoLoadJiraProjects]);
+
+  function connectJira() {
+    sessionStorage.setItem("astra_project_create_draft", JSON.stringify(getValues()));
+    window.location.href = "/api/integrations/jira/connect?returnTo=%2Fdashboard%2Fprojects";
+  }
+
+  async function loadJiraProjects() {
+    setJiraStatus("loading");
+    setJiraError(null);
+    try {
+      const result = await api.jiraProjects();
+      setJiraProjects(result.projects);
+      setJiraStatus(result.projects.length ? "ready" : "idle");
+    } catch (caught) {
+      setJiraStatus("error");
+      setJiraError(caught instanceof Error ? caught.message : "Jira projects could not be loaded.");
+    }
+  }
+
+  return (
+    <form className="form-panel" onSubmit={handleSubmit(onSubmit)}>
+      <label>Project ID<input {...register("project_id")} readOnly={Boolean(defaultValues?.project_id)} /> <FieldError message={errors.project_id?.message} /></label>
+      <label>Name<input {...register("name")} /> <FieldError message={errors.name?.message} /></label>
+      <label>Description<textarea {...register("description")} /></label>
+      <label>Owner employee ID<input {...register("owner_employee_id")} /></label>
+      <label>Department<input {...register("department")} /></label>
+      <label>Status<select {...register("status")}><option>PLANNED</option><option>ACTIVE</option><option>IN_PROGRESS</option><option>ON_HOLD</option><option>COMPLETED</option><option>ARCHIVED</option></select></label>
+      <p className="form-context">GitHub metadata (no secrets)</p>
+      <label>Organization<input {...register("github_organization")} /></label>
+      <label>Repository<input {...register("github_repository")} /></label>
+      <label>Repository ID<input {...register("github_repository_id")} /></label>
+      <label>Default branch<input {...register("github_default_branch")} /></label>
+      <label>Installation ID<input {...register("github_installation_id")} /></label>
+      <div className="form-context">
+        <span>Jira project (server-selected, no cloud ID entry)</span>
+        <button type="button" className="button secondary" onClick={connectJira}>Connect Jira</button>
+      </div>
+      {jiraStatus === "error" && <small className="field-error">{jiraError ?? "Jira project list could not be loaded."}</small>}
+      <button type="button" className="button secondary" onClick={() => void loadJiraProjects()} disabled={jiraStatus === "loading"}>
+        {jiraStatus === "loading" ? "Loading projects..." : "Load connected projects"}
+      </button>
+      <label>Project<select {...register("jira_project_id")}><option value="">Select Jira project</option>{jiraProjects.map((project) => <option key={project.id} value={project.id}>{project.key} — {project.name}</option>)}</select></label>
+      <label>Project key<input {...register("jira_project_key")} readOnly /></label>
+      {jiraStatus === "ready" && <small className="form-hint">The selected Jira project will be saved against the authenticated employee connection.</small>}
+      <FormActions submitting={submitting} submitLabel={submitLabel} />
+    </form>
+  );
 }
 
 export function TeamForm({ defaultValues, onSubmit, submitting, submitLabel = "Save team" }: FormProps<z.infer<typeof teamSchema>>) {

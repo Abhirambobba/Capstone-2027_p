@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ProjectStatus = Literal[
     "PLANNED",
@@ -28,8 +28,21 @@ class JiraConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     provider: Literal["jira"] = "jira"
-    cloud_id: str = Field(min_length=1)
-    project_key: str = Field(min_length=1)
+    cloud_id: str | None = None
+    project_id: str | None = None
+    project_key: str | None = None
+
+    @model_validator(mode="after")
+    def validate_jira_mapping(self):
+        if self.project_key is None and self.project_id is None and self.cloud_id is None:
+            raise ValueError("Jira metadata must include a project selection")
+        if self.project_id is not None and not self.project_id:
+            raise ValueError("project_id cannot be empty")
+        if self.project_key is not None and not self.project_key:
+            raise ValueError("project_key cannot be empty")
+        if self.cloud_id is not None and not self.cloud_id:
+            raise ValueError("cloud_id cannot be empty")
+        return self
 
 
 class ProjectCreateRequest(BaseModel):
