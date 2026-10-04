@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -15,6 +16,8 @@ from app.repositories.employee_repository import (
     EmployeeIdentityConflictError,
     EmployeeRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -117,6 +120,7 @@ def get_current_user(
             detail="Cognito identity is linked to multiple Astra employees",
         ) from error
     except Exception as error:
+        logger.exception("Employee identity lookup failed for Cognito sub=%s", cognito_user_id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Employee identity lookup is unavailable",

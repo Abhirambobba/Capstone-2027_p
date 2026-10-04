@@ -41,9 +41,18 @@ Resources:
       AttributeDefinitions:
         - AttributeName: employee_id
           AttributeType: S
+        - AttributeName: cognito_user_id
+          AttributeType: S
       KeySchema:
         - AttributeName: employee_id
           KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: CognitoUserIndex
+          KeySchema:
+            - AttributeName: cognito_user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       SSESpecification:
@@ -199,9 +208,12 @@ Resources:
               Action:
                 - dynamodb:PutItem
                 - dynamodb:GetItem
+                - dynamodb:Query
                 - dynamodb:Scan
                 - dynamodb:UpdateItem
-              Resource: !GetAtt AstraEmployees.Arn
+              Resource:
+                - !GetAtt AstraEmployees.Arn
+                - !Sub '${AstraEmployees.Arn}/index/CognitoUserIndex'
         - Statement:
             - Sid: ProjectTableAccess
               Effect: Allow

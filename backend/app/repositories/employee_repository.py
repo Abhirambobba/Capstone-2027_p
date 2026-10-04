@@ -52,12 +52,14 @@ class EmployeeRepository:
         matched_item = None
         while True:
             parameters: dict[str, Any] = {
-                "FilterExpression": Attr("auth.cognito_user_id").eq(cognito_user_id),
+                "IndexName": "CognitoUserIndex",
+                "KeyConditionExpression": "cognito_user_id = :cognito_user_id",
+                "ExpressionAttributeValues": {":cognito_user_id": cognito_user_id},
             }
             if exclusive_start_key:
                 parameters["ExclusiveStartKey"] = exclusive_start_key
             try:
-                response = self.table.scan(**parameters)
+                response = self.table.query(**parameters)
             except ClientError as error:
                 self._raise_for_client_error(error)
                 raise

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock
 
 import jwt
 import pytest
@@ -85,6 +86,23 @@ def test_employee_is_not_authorized_as_manager():
 def test_manager_is_authorized():
     manager = make_test_user("MANAGER")
     assert require_manager(manager) is manager
+
+
+def test_find_by_cognito_user_id_uses_gsi_query():
+    table = Mock()
+    table.query.return_value = {
+        "Items": [{"employee_id": "EMP_123", "cognito_user_id": "cognito-sub"}],
+    }
+
+    repo = auth.EmployeeRepository(table)
+    result = repo.find_by_cognito_user_id("cognito-sub")
+
+    assert result == table.query.return_value["Items"][0]
+    table.query.assert_called_once()
+    args = table.query.call_args.kwargs
+    assert args["IndexName"] == "CognitoUserIndex"
+    assert args["KeyConditionExpression"] == "cognito_user_id = :cognito_user_id"
+    assert args["ExpressionAttributeValues"] == {":cognito_user_id": "cognito-sub"}
 
 
 def test_management_get_requires_authentication():

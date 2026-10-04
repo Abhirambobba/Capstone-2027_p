@@ -39,6 +39,8 @@ class EmployeeService:
             self._ensure_cognito_identity_available(cognito_user_id)
         timestamp = iso_timestamp(utc_now())
         item = request.model_dump(mode="json")
+        if cognito_user_id:
+            item["cognito_user_id"] = cognito_user_id
         item.update(
             {
                 "employment_status": "ACTIVE",
@@ -74,9 +76,9 @@ class EmployeeService:
         if fields.get("auth") is None and "auth" in fields:
             raise EmployeeRepositoryValidationError("auth must be an object")
         if "auth" in fields and fields["auth"].get("cognito_user_id"):
-            self._ensure_cognito_identity_available(
-                fields["auth"]["cognito_user_id"], employee_id
-            )
+            cognito_user_id = fields["auth"]["cognito_user_id"]
+            self._ensure_cognito_identity_available(cognito_user_id, employee_id)
+            fields["cognito_user_id"] = cognito_user_id
         fields["updated_at"] = iso_timestamp(utc_now())
         item = self.repository.update(employee_id, fields)
         if item is None:
