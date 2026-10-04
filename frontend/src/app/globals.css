@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root { --ink:#17212b; --muted:#71808d; --line:#e6ebee; --paper:#f7f9fa; --white:#fff; --navy:#17364b; --blue:#2e7da3; --green:#3a9175; --yellow:#c8932d; --red:#c45c5c; }
+.login-page { min-height:100vh; display:grid; place-items:center; padding:24px; background:var(--paper); } .login-panel { width:min(100%,420px); display:grid; gap:14px; padding:34px; background:white; border:1px solid var(--line); border-radius:7px; } .login-panel h1 { margin:0; font-size:32px; font-weight:400; } .login-panel > p:not(.eyebrow) { margin:0; color:var(--muted); font:13px/1.6 Arial,sans-serif; } .login-panel .brand-mark { margin-bottom:8px; } .auth-loading { min-height:100vh; display:grid; place-items:center; color:var(--muted); font:13px Arial,sans-serif; } .signout-button { padding:6px; }
 * { box-sizing:border-box; }
 body { margin:0; background:var(--paper); color:var(--ink); font-family:Georgia,"Times New Roman",serif; }
 button,input { font:inherit; } button { cursor:pointer; }

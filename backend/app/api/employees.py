@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.core.auth import require_authenticated_user, require_manager
 from app.core.dynamodb import get_employees_table
 from app.models.employee import (
     AgentHeartbeatRequest,
@@ -13,11 +14,16 @@ from app.models.employee import (
 )
 from app.repositories.employee_repository import (
     EmployeeAlreadyExistsError,
+    EmployeeIdentityConflictError,
     EmployeeRepository,
     EmployeeRepositoryValidationError,
     EmployeeTableUnavailableError,
 )
-from app.services.employee_service import EmployeeNotFoundError, EmployeeService
+from app.services.employee_service import (
+    EmployeeCognitoIdentityAlreadyLinkedError,
+    EmployeeNotFoundError,
+    EmployeeService,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,6 +47,7 @@ def handle_repository_error(error: Exception) -> None:
     "/api/v1/management/employees",
     response_model=Employee,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_manager)],
 )
 def create_employee(
     request: EmployeeCreate,
@@ -50,6 +57,8 @@ def create_employee(
         employee = service.create(request)
     except EmployeeAlreadyExistsError as error:
         raise HTTPException(status_code=409, detail="Employee already exists") from error
+    except (EmployeeCognitoIdentityAlreadyLinkedError, EmployeeIdentityConflictError) as error:
+        raise HTTPException(status_code=409, detail="Cognito user is already linked") from error
     except (EmployeeRepositoryValidationError, EmployeeTableUnavailableError) as error:
         handle_repository_error(error)
     logger.info("employee_created", extra={"employee_id": employee.employee_id})
@@ -59,6 +68,7 @@ def create_employee(
 @router.get(
     "/api/v1/management/employees/{employee_id}",
     response_model=Employee,
+    dependencies=[Depends(require_authenticated_user)],
 )
 def get_employee(
     employee_id: str,
@@ -72,7 +82,11 @@ def get_employee(
         handle_repository_error(error)
 
 
-@router.get("/api/v1/management/employees", response_model=EmployeePage)
+@router.get(
+    "/api/v1/management/employees",
+    response_model=EmployeePage,
+    dependencies=[Depends(require_authenticated_user)],
+)
 def list_employees(
     limit: int = Query(default=25, ge=1, le=100),
     next_token: str | None = None,
@@ -87,6 +101,7 @@ def list_employees(
 @router.patch(
     "/api/v1/management/employees/{employee_id}",
     response_model=Employee,
+    dependencies=[Depends(require_manager)],
 )
 def update_employee(
     employee_id: str,
@@ -95,6 +110,8 @@ def update_employee(
 ):
     try:
         return service.update(employee_id, request)
+    except (EmployeeCognitoIdentityAlreadyLinkedError, EmployeeIdentityConflictError) as error:
+        raise HTTPException(status_code=409, detail="Cognito user is already linked") from error
     except EmployeeNotFoundError as error:
         raise HTTPException(status_code=404, detail="Employee not found") from error
     except (EmployeeRepositoryValidationError, EmployeeTableUnavailableError) as error:

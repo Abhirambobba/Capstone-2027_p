@@ -9,6 +9,9 @@ class Settings:
     dynamodb_memberships_table: str | None = None
     dynamodb_state_table: str | None = None
     aws_region: str | None = None
+    cognito_user_pool_id: str | None = None
+    cognito_client_id: str | None = None
+    cognito_region: str | None = None
 
 
 def get_settings() -> Settings:
@@ -21,4 +24,7 @@ def get_settings() -> Settings:
         dynamodb_memberships_table=os.getenv("DYNAMODB_MEMBERSHIPS_TABLE"),
         dynamodb_state_table=os.getenv("DYNAMODB_STATE_TABLE"),
         aws_region=os.getenv("AWS_REGION"),
+        cognito_user_pool_id=os.getenv("COGNITO_USER_POOL_ID"),
+        cognito_client_id=os.getenv("COGNITO_CLIENT_ID"),
+        cognito_region=os.getenv("COGNITO_REGION"),
     )

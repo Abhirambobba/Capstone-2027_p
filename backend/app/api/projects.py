@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.core.auth import require_authenticated_user, require_manager
 from app.core.dynamodb import get_employees_table, get_projects_table
 from app.models.project import (
     ProjectCreateRequest,
@@ -55,6 +56,7 @@ def handle_project_repository_error(error: Exception) -> None:
     "/api/v1/management/projects",
     response_model=ProjectResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_manager)],
 )
 def create_project(
     request: ProjectCreateRequest,
@@ -82,6 +84,7 @@ def create_project(
 @router.get(
     "/api/v1/management/projects/{project_id}",
     response_model=ProjectResponse,
+    dependencies=[Depends(require_authenticated_user)],
 )
 def get_project(
     project_id: str,
@@ -95,7 +98,11 @@ def get_project(
         handle_project_repository_error(error)
 
 
-@router.get("/api/v1/management/projects", response_model=ProjectPage)
+@router.get(
+    "/api/v1/management/projects",
+    response_model=ProjectPage,
+    dependencies=[Depends(require_authenticated_user)],
+)
 def list_projects(
     limit: int = Query(default=25, ge=1, le=100),
     next_token: str | None = None,
@@ -110,6 +117,7 @@ def list_projects(
 @router.patch(
     "/api/v1/management/projects/{project_id}",
     response_model=ProjectResponse,
+    dependencies=[Depends(require_manager)],
 )
 def update_project(
     project_id: str,

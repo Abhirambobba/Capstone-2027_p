@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.core.auth import require_authenticated_user, require_manager
 from app.core.dynamodb import (
     get_employees_table,
     get_project_memberships_table,
@@ -77,6 +78,7 @@ def run_task_operation(operation):
     "/api/v1/management/projects/{project_id}/tasks",
     response_model=TaskResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_manager)],
 )
 def create_task(project_id: str, request: CreateTaskRequest, service: TaskService = Depends(get_task_service)):
     return run_task_operation(lambda: service.create(project_id, request))
@@ -85,6 +87,7 @@ def create_task(project_id: str, request: CreateTaskRequest, service: TaskServic
 @router.get(
     "/api/v1/management/projects/{project_id}/tasks",
     response_model=TaskListResponse,
+    dependencies=[Depends(require_authenticated_user)],
 )
 def list_project_tasks(
     project_id: str,
@@ -98,6 +101,7 @@ def list_project_tasks(
 @router.get(
     "/api/v1/management/projects/{project_id}/tasks/{task_id}",
     response_model=TaskResponse,
+    dependencies=[Depends(require_authenticated_user)],
 )
 def get_task(project_id: str, task_id: str, service: TaskService = Depends(get_task_service)):
     return run_task_operation(lambda: service.get(project_id, task_id))
@@ -106,6 +110,7 @@ def get_task(project_id: str, task_id: str, service: TaskService = Depends(get_t
 @router.patch(
     "/api/v1/management/projects/{project_id}/tasks/{task_id}",
     response_model=TaskResponse,
+    dependencies=[Depends(require_manager)],
 )
 def update_task(
     project_id: str,
@@ -119,6 +124,7 @@ def update_task(
 @router.get(
     "/api/v1/management/employees/{employee_id}/tasks",
     response_model=TaskListResponse,
+    dependencies=[Depends(require_authenticated_user)],
 )
 def list_employee_tasks(
     employee_id: str,
@@ -139,6 +145,7 @@ def list_employee_tasks(
 @router.get(
     "/api/v1/management/projects/{project_id}/teams/{team_id}/tasks",
     response_model=TaskListResponse,
+    dependencies=[Depends(require_authenticated_user)],
 )
 def list_team_tasks(
     project_id: str,

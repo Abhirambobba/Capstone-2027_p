@@ -1,14 +1,19 @@
-import type { Employee, Membership, Page, Project, Task, Team } from "./types";
+import type { AccessRole, ActivityEvent, Employee, Membership, Page, Project, Task, Team } from "./types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/backend-api";
+const API_BASE_URL = "/api/backend";
 
 export class ApiError extends Error { constructor(public readonly status: number, message: string) { super(message); } }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers: { "Content-Type": "application/json", ...init?.headers }, cache: "no-store" });
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers, cache: "no-store", credentials: "same-origin" });
   if (!response.ok) {
     let message = "Something went wrong while contacting Astra.";
     try { const body = await response.json() as { detail?: string }; message = body.detail ?? message; } catch { /* non-JSON error */ }
+    if (typeof window !== "undefined" && (response.status === 401 || response.status === 403)) {
+      window.dispatchEvent(new CustomEvent("astra:auth-error", { detail: response.status }));
+    }
     throw new ApiError(response.status, message);
   }
   if (response.status === 204) return undefined as T;
@@ -16,6 +21,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  me: () => request<Employee>("/api/v1/me"),
+  meTasks: (limit = 100) => request<Page<Task>>(`/api/v1/me/tasks?limit=${limit}`),
+  meProjects: () => request<Project[]>("/api/v1/me/projects"),
+  meTeams: () => request<Team[]>("/api/v1/me/teams"),
+  meActivity: (limit = 100) => request<{ items: ActivityEvent[]; next_token: string | null }>(`/api/v1/me/activity?limit=${limit}`),
   employees: (limit = 100) => request<Page<Employee>>(`/api/v1/management/employees?limit=${limit}`),
   employee: (id: string) => request<Employee>(`/api/v1/management/employees/${encodeURIComponent(id)}`),
   employeeProjects: (id: string) => request<Membership[]>(`/api/v1/management/employees/${encodeURIComponent(id)}/projects`),
@@ -26,8 +36,8 @@ export const api = {
   projectTeams: (id: string) => request<Team[]>(`/api/v1/management/projects/${encodeURIComponent(id)}/teams`),
   projectTasks: (id: string, limit = 100) => request<Page<Task>>(`/api/v1/management/projects/${encodeURIComponent(id)}/tasks?limit=${limit}`),
   task: (projectId: string, taskId: string) => request<Task>(`/api/v1/management/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`),
-  createEmployee: (body: { employee_id: string; name: string; email: string; role: string; department: string; manager_id?: string | null }) => request<Employee>("/api/v1/management/employees", { method: "POST", body: JSON.stringify(body) }),
-  updateEmployee: (id: string, body: { name?: string; email?: string; role?: string; department?: string; manager_id?: string | null; employment_status?: string }) => request<Employee>(`/api/v1/management/employees/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
+  createEmployee: (body: { employee_id: string; name: string; email: string; role: string; department: string; manager_id?: string | null; access_role?: AccessRole; auth?: { cognito_user_id?: string | null } }) => request<Employee>("/api/v1/management/employees", { method: "POST", body: JSON.stringify(body) }),
+  updateEmployee: (id: string, body: { name?: string; email?: string; role?: string; department?: string; manager_id?: string | null; employment_status?: string; access_role?: AccessRole; auth?: { cognito_user_id?: string | null } }) => request<Employee>(`/api/v1/management/employees/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
   registerAgent: (body: { employee_id: string; device_id: string; agent_version: string; os: string }) => request<Employee>("/api/v1/agent/register", { method: "POST", body: JSON.stringify(body) }),
   heartbeat: (body: { device_id: string; timestamp: string; agent_version: string }) => request<Employee>("/api/v1/agent/heartbeat", { method: "POST", body: JSON.stringify(body) }),
   createProject: (body: { project_id: string; name: string; description?: string | null; status?: string; owner_employee_id?: string | null; department?: string | null; github?: { provider: "github"; organization: string; repository: string; repository_id: string; default_branch: string; installation_id: string } | null; jira?: { provider: "jira"; cloud_id: string; project_key: string } | null }) => request<Project>("/api/v1/management/projects", { method: "POST", body: JSON.stringify(body) }),

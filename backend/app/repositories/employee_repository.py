@@ -18,6 +18,10 @@ class EmployeeRepositoryValidationError(Exception):
     pass
 
 
+class EmployeeIdentityConflictError(Exception):
+    pass
+
+
 class EmployeeRepository:
     def __init__(self, table: Any):
         self.table = table
@@ -42,6 +46,29 @@ class EmployeeRepository:
             self._raise_for_client_error(error)
             raise
         return response.get("Item")
+
+    def find_by_cognito_user_id(self, cognito_user_id: str) -> dict[str, Any] | None:
+        exclusive_start_key = None
+        matched_item = None
+        while True:
+            parameters: dict[str, Any] = {
+                "FilterExpression": Attr("auth.cognito_user_id").eq(cognito_user_id),
+            }
+            if exclusive_start_key:
+                parameters["ExclusiveStartKey"] = exclusive_start_key
+            try:
+                response = self.table.scan(**parameters)
+            except ClientError as error:
+                self._raise_for_client_error(error)
+                raise
+            items = response.get("Items", [])
+            if items:
+                if matched_item is not None or len(items) > 1:
+                    raise EmployeeIdentityConflictError
+                matched_item = items[0]
+            exclusive_start_key = response.get("LastEvaluatedKey")
+            if not exclusive_start_key:
+                return matched_item
 
     def list(self, limit: int, exclusive_start_key: dict[str, Any] | None):
         parameters: dict[str, Any] = {"Limit": limit}

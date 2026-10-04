@@ -10,6 +10,7 @@ from app.models.employee import (
     EmployeePatch,
 )
 from app.repositories.employee_repository import EmployeeRepository
+from app.repositories.employee_repository import EmployeeIdentityConflictError
 
 
 def utc_now() -> datetime:
@@ -24,11 +25,18 @@ class EmployeeNotFoundError(Exception):
     pass
 
 
+class EmployeeCognitoIdentityAlreadyLinkedError(Exception):
+    pass
+
+
 class EmployeeService:
     def __init__(self, repository: EmployeeRepository):
         self.repository = repository
 
     def create(self, request: EmployeeCreate) -> Employee:
+        cognito_user_id = request.auth.cognito_user_id
+        if cognito_user_id:
+            self._ensure_cognito_identity_available(cognito_user_id)
         timestamp = iso_timestamp(utc_now())
         item = request.model_dump(mode="json")
         item.update(
@@ -63,11 +71,24 @@ class EmployeeService:
 
     def update(self, employee_id: str, request: EmployeePatch) -> Employee:
         fields = request.model_dump(exclude_unset=True, mode="json")
+        if fields.get("auth") is None and "auth" in fields:
+            raise EmployeeRepositoryValidationError("auth must be an object")
+        if "auth" in fields and fields["auth"].get("cognito_user_id"):
+            self._ensure_cognito_identity_available(
+                fields["auth"]["cognito_user_id"], employee_id
+            )
         fields["updated_at"] = iso_timestamp(utc_now())
         item = self.repository.update(employee_id, fields)
         if item is None:
             raise EmployeeNotFoundError
         return Employee.model_validate(item)
+
+    def _ensure_cognito_identity_available(
+        self, cognito_user_id: str, employee_id: str | None = None
+    ) -> None:
+        linked_employee = self.repository.find_by_cognito_user_id(cognito_user_id)
+        if linked_employee and linked_employee["employee_id"] != employee_id:
+            raise EmployeeCognitoIdentityAlreadyLinkedError
 
     def register_agent(self, request: AgentRegisterRequest) -> Employee:
         employee = self.get(request.employee_id)

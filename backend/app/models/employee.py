@@ -5,6 +5,19 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 EmploymentStatus = Literal["ACTIVE", "INACTIVE", "ON_LEAVE"]
 AgentStatus = Literal["ONLINE", "OFFLINE", "UNKNOWN"]
+AccessRole = Literal["MANAGER", "EMPLOYEE"]
+
+
+class EmployeeAuth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cognito_user_id: str | None = None
+
+
+class EmployeeAuthPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cognito_user_id: str | None = None
 
 
 class AgentMetadata(BaseModel):
@@ -18,12 +31,16 @@ class AgentMetadata(BaseModel):
 
 
 class EmployeeCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     employee_id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     email: EmailStr
     role: str = Field(min_length=1)
     department: str = Field(min_length=1)
     manager_id: str | None = None
+    access_role: AccessRole = "EMPLOYEE"
+    auth: EmployeeAuth = Field(default_factory=EmployeeAuth)
 
 
 class EmployeePatch(BaseModel):
@@ -35,6 +52,8 @@ class EmployeePatch(BaseModel):
     department: str | None = Field(default=None, min_length=1)
     manager_id: str | None = None
     employment_status: EmploymentStatus | None = None
+    access_role: AccessRole | None = None
+    auth: EmployeeAuthPatch | None = None
 
 
 class Employee(BaseModel):
@@ -46,6 +65,8 @@ class Employee(BaseModel):
     role: str
     department: str
     manager_id: str | None = None
+    access_role: AccessRole = "EMPLOYEE"
+    auth: EmployeeAuth = Field(default_factory=EmployeeAuth)
     employment_status: EmploymentStatus
     agent: AgentMetadata = Field(default_factory=AgentMetadata)
     created_at: datetime

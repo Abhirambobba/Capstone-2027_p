@@ -7,7 +7,7 @@ s3_prefix = "astra-dev"
 region = "ap-south-2"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
-parameter_overrides = "Environment=\"dev\" AstraEmployeesTableName=\"AstraEmployees\" AstraProjectsTableName=\"AstraProjects\" AstraProjectMembershipsTableName=\"AstraProjectMemberships\" AstraProjectStateTableName=\"AstraProjectState\""
+parameter_overrides = "Environment=\"dev\" AstraEmployeesTableName=\"AstraEmployees\" AstraProjectsTableName=\"AstraProjects\" AstraProjectMembershipsTableName=\"AstraProjectMemberships\" AstraProjectStateTableName=\"AstraProjectState\" CognitoUserPoolId=\"ap-south-2_Z65eBsA6F\" CognitoClientId=\"71pp1273ea6t7muvmujqcvabcn\""
 image_repositories = []
 
 [default.global.parameters]

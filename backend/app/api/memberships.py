@@ -3,6 +3,7 @@ from typing import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from app.core.auth import require_authenticated_user, require_manager
 from app.core.dynamodb import (
     get_employees_table,
     get_projects_table,
@@ -86,6 +87,7 @@ def run_with_errors(operation: Callable):
     "/api/v1/management/projects/{project_id}/teams",
     response_model=TeamResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_manager)],
 )
 def create_team(
     project_id: str,
@@ -100,6 +102,7 @@ def create_team(
 @router.get(
     "/api/v1/management/projects/{project_id}/teams",
     response_model=list[TeamResponse],
+    dependencies=[Depends(require_authenticated_user)],
 )
 def list_teams(
     project_id: str,
@@ -111,6 +114,7 @@ def list_teams(
 @router.get(
     "/api/v1/management/projects/{project_id}/teams/{team_id}",
     response_model=TeamResponse,
+    dependencies=[Depends(require_authenticated_user)],
 )
 def get_team(
     project_id: str,
@@ -123,6 +127,7 @@ def get_team(
 @router.patch(
     "/api/v1/management/projects/{project_id}/teams/{team_id}",
     response_model=TeamResponse,
+    dependencies=[Depends(require_manager)],
 )
 def update_team(
     project_id: str,
@@ -137,6 +142,7 @@ def update_team(
     "/api/v1/management/projects/{project_id}/employees",
     response_model=MembershipResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_manager)],
 )
 def add_employee(
     project_id: str,
@@ -154,6 +160,7 @@ def add_employee(
 @router.get(
     "/api/v1/management/projects/{project_id}/employees",
     response_model=list[MembershipResponse],
+    dependencies=[Depends(require_authenticated_user)],
 )
 def list_project_employees(
     project_id: str,
@@ -165,6 +172,7 @@ def list_project_employees(
 @router.get(
     "/api/v1/management/employees/{employee_id}/projects",
     response_model=list[MembershipResponse],
+    dependencies=[Depends(require_authenticated_user)],
 )
 def list_employee_projects(
     employee_id: str,
@@ -176,6 +184,7 @@ def list_employee_projects(
 @router.patch(
     "/api/v1/management/projects/{project_id}/employees/{employee_id}",
     response_model=MembershipResponse,
+    dependencies=[Depends(require_manager)],
 )
 def update_employee_membership(
     project_id: str,
@@ -191,6 +200,7 @@ def update_employee_membership(
 @router.post(
     "/api/v1/management/projects/{project_id}/teams/{team_id}/employees",
     response_model=MembershipResponse,
+    dependencies=[Depends(require_manager)],
 )
 def add_employee_to_team(
     project_id: str,
@@ -208,6 +218,7 @@ def add_employee_to_team(
 @router.get(
     "/api/v1/management/projects/{project_id}/teams/{team_id}/employees",
     response_model=list[MembershipResponse],
+    dependencies=[Depends(require_authenticated_user)],
 )
 def list_team_employees(
     project_id: str,
@@ -220,6 +231,7 @@ def list_team_employees(
 @router.delete(
     "/api/v1/management/projects/{project_id}/employees/{employee_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_manager)],
 )
 def remove_employee(
     project_id: str,
@@ -233,6 +245,7 @@ def remove_employee(
 @router.delete(
     "/api/v1/management/projects/{project_id}/teams/{team_id}/employees/{employee_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_manager)],
 )
 def remove_employee_from_team(
     project_id: str,

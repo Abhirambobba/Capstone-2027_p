@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { QueryProvider } from "@/lib/query-provider";
 import { ToastProvider } from "@/components/toast";
+import { AuthProvider } from "@/lib/auth-provider";
 
 export const metadata: Metadata = {
   title: "Astra | Workforce intelligence",
@@ -9,5 +10,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body suppressHydrationWarning><QueryProvider><ToastProvider>{children}</ToastProvider></QueryProvider></body></html>;
+  return <html lang="en"><body suppressHydrationWarning><AuthProvider><QueryProvider><ToastProvider>{children}</ToastProvider></QueryProvider></AuthProvider></body></html>;
 }

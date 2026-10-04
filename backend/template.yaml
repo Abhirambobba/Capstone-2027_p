@@ -23,6 +23,14 @@ Parameters:
     Type: String
     Default: AstraProjectState
     Description: DynamoDB table name for project state, tasks, evidence, and history.
+  CognitoUserPoolId:
+    Type: String
+    Default: ap-south-2_Z65eBsA6F
+    Description: Existing Cognito user pool ID.
+  CognitoClientId:
+    Type: String
+    Default: 71pp1273ea6t7muvmujqcvabcn
+    Description: Existing public Cognito app client ID.
 
 Resources:
   AstraEmployees:
@@ -181,11 +189,28 @@ Resources:
           DYNAMODB_PROJECTS_TABLE: !Ref AstraProjectsTableName
           DYNAMODB_MEMBERSHIPS_TABLE: !Ref AstraProjectMembershipsTableName
           DYNAMODB_STATE_TABLE: !Ref AstraProjectStateTableName
+          COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+          COGNITO_CLIENT_ID: !Ref CognitoClientId
+          COGNITO_REGION: !Ref AWS::Region
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref AstraEmployeesTableName
-        - DynamoDBCrudPolicy:
-            TableName: !Ref AstraProjectsTableName
+        - Statement:
+            - Sid: EmployeeTableAccess
+              Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:Scan
+                - dynamodb:UpdateItem
+              Resource: !GetAtt AstraEmployees.Arn
+        - Statement:
+            - Sid: ProjectTableAccess
+              Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:Scan
+                - dynamodb:UpdateItem
+              Resource: !GetAtt AstraProjects.Arn
         - Statement:
             - Sid: MembershipTableAccess
               Effect: Allow
@@ -197,18 +222,20 @@ Resources:
                 - dynamodb:DeleteItem
               Resource:
                 - !GetAtt AstraProjectMemberships.Arn
-                - !Sub '${AstraProjectMemberships.Arn}/index/*'
+                - !Sub '${AstraProjectMemberships.Arn}/index/EmployeeProjectsIndex'
+                - !Sub '${AstraProjectMemberships.Arn}/index/ProjectTeamEmployeesIndex'
         - Statement:
             - Sid: ProjectStateTableAccess
               Effect: Allow
               Action:
+                - dynamodb:PutItem
                 - dynamodb:GetItem
                 - dynamodb:Query
                 - dynamodb:UpdateItem
-                - dynamodb:TransactWriteItems
               Resource:
                 - !GetAtt AstraProjectState.Arn
-                - !Sub '${AstraProjectState.Arn}/index/*'
+                - !Sub '${AstraProjectState.Arn}/index/EmployeeTasksIndex'
+                - !Sub '${AstraProjectState.Arn}/index/TeamTasksIndex'
       Events:
         CreateEmployee:
           Type: Api
@@ -350,8 +377,42 @@ Resources:
           Properties:
             Path: /api/v1/management/projects/{project_id}/teams/{team_id}/tasks
             Method: get
+        GetMe:
+          Type: Api
+          Properties:
+            Path: /api/v1/me
+            Method: get
+        GetMyTasks:
+          Type: Api
+          Properties:
+            Path: /api/v1/me/tasks
+            Method: get
+        GetMyProjects:
+          Type: Api
+          Properties:
+            Path: /api/v1/me/projects
+            Method: get
+        GetMyTeams:
+          Type: Api
+          Properties:
+            Path: /api/v1/me/teams
+            Method: get
+        GetMyActivity:
+          Type: Api
+          Properties:
+            Path: /api/v1/me/activity
+            Method: get
 
 Outputs:
+  CognitoUserPoolId:
+    Description: Existing Cognito user pool ID.
+    Value: !Ref CognitoUserPoolId
+  CognitoClientId:
+    Description: Existing public Cognito app client ID.
+    Value: !Ref CognitoClientId
+  CognitoRegion:
+    Description: Cognito user pool region.
+    Value: !Ref AWS::Region
   AstraEmployeesTableName:
     Description: AstraEmployees DynamoDB table name.
     Value: !Ref AstraEmployees
