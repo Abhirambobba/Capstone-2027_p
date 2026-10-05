@@ -15,7 +15,6 @@ type GitHubRepository = {
 export function GitHubProjectIntegration({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<Project | null>(null);
   const [repositories, setRepositories] = useState<GitHubRepository[]>([]);
-  const [installationId, setInstallationId] = useState("");
   const [selectedRepositoryId, setSelectedRepositoryId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +25,6 @@ export function GitHubProjectIntegration({ projectId }: { projectId: string }) {
       .then((value) => {
         setProject(value);
         setSelectedRepositoryId(value.github?.repository_id ?? "");
-        setInstallationId(value.github?.installation_id ?? "");
       })
       .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "Project could not be loaded."));
   }, [projectId]);
@@ -35,25 +33,22 @@ export function GitHubProjectIntegration({ projectId }: { projectId: string }) {
     const params = new URLSearchParams(window.location.search);
     const status = params.get("github_status");
     const callbackFailure = params.get("github_error");
-    const callbackInstallationId = params.get("github_installation_id");
-    if (!status && !callbackFailure && !callbackInstallationId) return;
+    if (!status && !callbackFailure) return;
 
     const savedRepositoryId = sessionStorage.getItem("astra_github_repository_draft");
     sessionStorage.removeItem("astra_github_repository_draft");
     startTransition(() => {
       if (savedRepositoryId) setSelectedRepositoryId(savedRepositoryId);
-      if (callbackInstallationId) setInstallationId(callbackInstallationId);
       setCallbackError(callbackFailure);
     });
     if (status === "connected") {
-      void api.githubRepositories(callbackInstallationId ?? "", projectId)
+      void api.githubRepositories(projectId)
         .then((result) => setRepositories(result.repositories))
         .catch((caught: unknown) => setError(caught instanceof Error ? caught.message : "GitHub repositories could not be loaded."))
         .finally(() => setLoading(false));
     }
     params.delete("github_status");
     params.delete("github_error");
-    params.delete("github_installation_id");
     const remainingQuery = params.toString();
     window.history.replaceState({}, "", `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}`);
   }, [projectId]);
@@ -62,9 +57,7 @@ export function GitHubProjectIntegration({ projectId }: { projectId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const selectedInstallationId = installationId || project?.github?.installation_id || "";
-      if (!selectedInstallationId) throw new Error("Connect GitHub for this project first.");
-      const result = await api.githubRepositories(selectedInstallationId, projectId);
+      const result = await api.githubRepositories(projectId);
       setRepositories(result.repositories);
       setSelectedRepositoryId((current) => current || project?.github?.repository_id || "");
     } catch (caught) {
@@ -86,7 +79,7 @@ export function GitHubProjectIntegration({ projectId }: { projectId: string }) {
     }
     try {
       const updated = await api.updateProject(projectId, {
-        github: { provider: "github", installation_id: installationId, repository_id: selectedRepositoryId },
+        github: { provider: "github", repository_id: selectedRepositoryId },
       });
       setProject(updated);
       setError(null);
@@ -99,7 +92,7 @@ export function GitHubProjectIntegration({ projectId }: { projectId: string }) {
     <section className="panel">
       <div className="section-heading"><h2>GitHub</h2></div>
       {project?.github && <p>Connected repository: <strong>{project.github.organization} / {project.github.repository}</strong></p>}
-      <div className="form-context"><span>GitHub App</span><button type="button" className="button secondary" onClick={connectGitHub}>Connect GitHub</button></div>
+      <div className="form-context"><span>GitHub account</span><button type="button" className="button secondary" onClick={connectGitHub}>Connect GitHub</button></div>
       {callbackError && <small className="field-error">GitHub connection failed ({callbackError}). Your project details are still here; try again.</small>}
       {error && <small className="field-error">{error}</small>}
       <button type="button" className="button secondary" onClick={() => void loadRepositories()} disabled={loading}>

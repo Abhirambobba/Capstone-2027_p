@@ -29,12 +29,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(destination);
     }
 
-    const payload = await upstream.json() as { install_url?: string };
-    const installUrl = new URL(payload.install_url ?? "");
-    if (installUrl.origin !== "https://github.com") {
-      throw new Error("GitHub installation URL was invalid");
-    }
-    const response = NextResponse.redirect(installUrl);
+    const payload = await upstream.json() as { connected?: boolean; return_to?: string };
+    if (!payload.connected) throw new Error("GitHub connection was not verified");
+    const destination = new URL(payload.return_to ?? safeReturnTo, request.url);
+    destination.searchParams.set("github_status", "connected");
+    const response = NextResponse.redirect(destination);
     if (session.accessToken !== current.accessToken) {
       response.cookies.set(SESSION_COOKIE, encryptCookieValue(session), cookieOptions(60 * 60 * 24 * 30));
     }

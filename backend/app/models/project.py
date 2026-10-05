@@ -21,14 +21,14 @@ class GitHubConfig(BaseModel):
     repository: str = Field(min_length=1)
     repository_id: str = Field(min_length=1)
     default_branch: str = Field(min_length=1)
-    installation_id: str = Field(min_length=1)
+    installation_id: str | None = None
 
 
 class GitHubRepositorySelection(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     provider: Literal["github"] = "github"
-    installation_id: str = Field(min_length=1)
+    installation_id: str | None = None
     repository_id: str = Field(min_length=1)
 
 

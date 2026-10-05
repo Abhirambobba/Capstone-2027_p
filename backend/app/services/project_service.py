@@ -98,7 +98,6 @@ class ProjectService:
             return request
 
         repository_id = request.github.repository_id
-        installation_id = request.github.installation_id
         github_service = self.github_service
         try:
             from app.main import app
@@ -109,19 +108,17 @@ class ProjectService:
             override = app.dependency_overrides.get("github_app_service_override")
             if override is not None:
                 resolved = override() if callable(override) else override
-                if hasattr(resolved, "resolve_repository_for_installation"):
+                if hasattr(resolved, "resolve_repository"):
                     github_service = resolved
 
-        repository = github_service.resolve_repository_for_installation(
-            installation_id, repository_id
-        )
+        repository = github_service.resolve_repository(repository_id)
         request.github = GitHubConfig(
             provider="github",
             organization=repository["organization"],
             repository=repository["repository"],
             repository_id=repository["repository_id"],
             default_branch=repository["default_branch"],
-            installation_id=repository["installation_id"],
+            installation_id=repository.get("installation_id"),
         )
         return request
 

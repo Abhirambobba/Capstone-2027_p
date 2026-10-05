@@ -449,11 +449,6 @@ Resources:
           Properties:
             Path: /api/v1/integrations/github/connect
             Method: get
-        GitHubCallback:
-          Type: Api
-          Properties:
-            Path: /api/v1/integrations/github/callback
-            Method: get
         GitHubRepositories:
           Type: Api
           Properties:
@@ -462,7 +457,7 @@ Resources:
         GitHubDebugRepositories:
           Type: Api
           Properties:
-            Path: /api/v1/integrations/github/debug/installations/{installation_id}/repositories
+            Path: /api/v1/integrations/github/debug/repositories
             Method: get
         GitHubPullRequests:
           Type: Api

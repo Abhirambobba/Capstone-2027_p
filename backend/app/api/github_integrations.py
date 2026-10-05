@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from app.core.auth import AuthenticatedUser, require_authenticated_user, require_manager
@@ -45,7 +44,8 @@ def resolve_github_app_service() -> GitHubAppService:
 
 
 class GitHubConnectResponse(BaseModel):
-    install_url: str
+    connected: bool
+    return_to: str
 
 
 class GitHubRepositoryListResponse(BaseModel):
@@ -57,7 +57,6 @@ class GitHubDebugRepository(BaseModel):
     organization: str
     repository: str
     default_branch: str
-    installation_id: str
     full_name: str
 
 
@@ -79,47 +78,13 @@ def connect_github(
     service: GitHubAppService = Depends(resolve_github_app_service),
 ) -> GitHubConnectResponse:
     try:
-        return GitHubConnectResponse(**service.start_installation(current_user.employee_id, return_to))
+        result = service.start_connection(current_user.employee_id, return_to)
+        return GitHubConnectResponse(
+            connected=result["connected"] == "true",
+            return_to=result["return_to"],
+        )
     except GitHubAppError as error:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
-
-
-@router.get("/api/v1/integrations/github/callback")
-def github_installation_callback(
-    installation_id: str | None = None,
-    state: str | None = None,
-    setup_action: str | None = None,
-    service: GitHubAppService = Depends(resolve_github_app_service),
-):
-    return_to = "/dashboard/projects"
-    try:
-        return_to = service._verify_state(state)["return_to"]
-        if setup_action not in {"install", "update"}:
-            raise ValueError("GitHub installation action is invalid")
-        result = service.complete_installation(installation_id, state)
-        return RedirectResponse(
-            service.callback_redirect(
-                connected=True,
-                return_to=result["return_to"],
-                installation_id=result["installation_id"],
-            ),
-            status_code=303,
-        )
-    except ValueError:
-        return RedirectResponse(
-            service.callback_redirect(connected=False, error="installation", return_to=return_to),
-            status_code=303,
-        )
-    except GitHubAppError:
-        return RedirectResponse(
-            service.callback_redirect(connected=False, error="unavailable", return_to=return_to),
-            status_code=303,
-        )
-    except Exception:
-        return RedirectResponse(
-            service.callback_redirect(connected=False, error="unavailable", return_to=return_to),
-            status_code=303,
-        )
 
 
 @router.get(
@@ -127,13 +92,12 @@ def github_installation_callback(
     response_model=GitHubRepositoryListResponse,
 )
 def list_github_repositories(
-    installation_id: str = Query(..., min_length=1),
     project_id: str = Query(..., min_length=1),
     current_user: AuthenticatedUser = Depends(require_manager),
     service: GitHubAppService = Depends(resolve_github_app_service),
 ) -> GitHubRepositoryListResponse:
     try:
-        repositories = service.list_repositories_for_installation(installation_id)
+        repositories = service.list_repositories()
         return GitHubRepositoryListResponse(repositories=repositories)
     except PermissionError as error:
         raise HTTPException(status_code=403, detail=str(error)) from error
@@ -144,18 +108,15 @@ def list_github_repositories(
 
 
 @router.get(
-    "/api/v1/integrations/github/debug/installations/{installation_id}/repositories",
+    "/api/v1/integrations/github/debug/repositories",
     response_model=GitHubDebugRepositoryListResponse,
 )
 def debug_list_installation_repositories(
-    installation_id: str,
     current_user: AuthenticatedUser = Depends(require_authenticated_user),
     service: GitHubAppService = Depends(resolve_github_app_service),
 ) -> GitHubDebugRepositoryListResponse:
     try:
-        repositories = service.list_repositories_for_installation(
-            installation_id,
-        )
+        repositories = service.list_repositories()
         return GitHubDebugRepositoryListResponse(repositories=repositories)
     except PermissionError as error:
         raise HTTPException(status_code=403, detail=str(error)) from error

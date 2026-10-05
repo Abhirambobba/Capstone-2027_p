@@ -51,7 +51,7 @@ export function EmployeeForm({ defaultValues, onSubmit, submitting, submitLabel 
   );
 }
 
-export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel = "Save project", autoLoadJiraProjects = false, autoLoadGitHubRepositories = false, connectedGitHubInstallationId, githubReturnTo = "/dashboard/projects", showJiraIntegration = true }: FormProps<z.infer<typeof projectSchema>> & { autoLoadJiraProjects?: boolean; autoLoadGitHubRepositories?: boolean; connectedGitHubInstallationId?: string; githubReturnTo?: string; showJiraIntegration?: boolean }) {
+export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel = "Save project", autoLoadJiraProjects = false, autoLoadGitHubRepositories = false, githubReturnTo = "/dashboard/projects", showJiraIntegration = true }: FormProps<z.infer<typeof projectSchema>> & { autoLoadJiraProjects?: boolean; autoLoadGitHubRepositories?: boolean; githubReturnTo?: string; showJiraIntegration?: boolean }) {
   const { register, handleSubmit, setValue, watch, getValues, formState: { errors } } = useForm<z.input<typeof projectSchema>, unknown, z.output<typeof projectSchema>>({ resolver: zodResolver(projectSchema), defaultValues: { project_id: "", description: "", owner_employee_id: "", department: "", status: "PLANNED", github_installation_id: "", github_repository_id: "", jira_project_id: "", jira_project_key: "", ...defaultValues } });
   const [jiraProjects, setJiraProjects] = useState<Array<{ id: string; key: string; name: string }>>([]);
   const [jiraStatus, setJiraStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -84,10 +84,7 @@ export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel =
   }, [autoLoadJiraProjects]);
 
   useEffect(() => {
-    if (connectedGitHubInstallationId) {
-      setValue("github_installation_id", connectedGitHubInstallationId);
-    }
-    if (!autoLoadGitHubRepositories || !connectedGitHubInstallationId) return;
+    if (!autoLoadGitHubRepositories) return;
     const projectId = getValues("project_id");
     if (!projectId) {
       setGitHubStatus("error");
@@ -95,7 +92,7 @@ export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel =
       return;
     }
     setGitHubStatus("loading");
-    void api.githubRepositories(connectedGitHubInstallationId, projectId)
+    void api.githubRepositories(projectId)
       .then((result) => {
         setGitHubRepositories(result.repositories);
         setGitHubStatus("ready");
@@ -104,7 +101,7 @@ export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel =
         setGitHubStatus("error");
         setGitHubError(caught instanceof Error ? caught.message : "GitHub repositories could not be loaded.");
       });
-  }, [autoLoadGitHubRepositories, connectedGitHubInstallationId, getValues, setValue]);
+  }, [autoLoadGitHubRepositories, getValues, setValue]);
 
   function connectJira() {
     sessionStorage.setItem("astra_project_create_draft", JSON.stringify(getValues()));
@@ -116,14 +113,13 @@ export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel =
     window.location.href = `/api/integrations/github/connect?returnTo=${encodeURIComponent(githubReturnTo)}`;
   }
 
-  async function loadGitHubRepositories(installationId = getValues("github_installation_id")) {
+  async function loadGitHubRepositories() {
     setGitHubStatus("loading");
     setGitHubError(null);
     try {
-      if (!installationId) throw new Error("Connect GitHub for this project first.");
       const projectId = getValues("project_id");
       if (!projectId) throw new Error("Enter the Astra project ID before loading repositories.");
-      const result = await api.githubRepositories(installationId, projectId);
+      const result = await api.githubRepositories(projectId);
       setGitHubRepositories(result.repositories);
       setGitHubStatus("ready");
     } catch (caught) {

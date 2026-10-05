@@ -12,7 +12,7 @@ import { ProjectForm, type ProjectFormValues } from "./forms";
 type ProjectDraft = NonNullable<ComponentProps<typeof ProjectForm>["defaultValues"]>;
 
 export function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([]); const [tasks, setTasks] = useState<Task[]>([]); const [query, setQuery] = useState(""); const [error, setError] = useState<string | null>(null); const [jiraConnectError, setJiraConnectError] = useState<string | null>(null); const [githubConnectError, setGitHubConnectError] = useState<string | null>(null); const [connectedGitHubInstallationId, setConnectedGitHubInstallationId] = useState<string>(); const [loading, setLoading] = useState(true); const [showCreate, setShowCreate] = useState(false); const [projectDraft, setProjectDraft] = useState<ProjectDraft>(); const [autoLoadJiraProjects, setAutoLoadJiraProjects] = useState(false); const [autoLoadGitHubRepositories, setAutoLoadGitHubRepositories] = useState(false); const router = useRouter();
+  const [projects, setProjects] = useState<Project[]>([]); const [tasks, setTasks] = useState<Task[]>([]); const [query, setQuery] = useState(""); const [error, setError] = useState<string | null>(null); const [jiraConnectError, setJiraConnectError] = useState<string | null>(null); const [githubConnectError, setGitHubConnectError] = useState<string | null>(null); const [loading, setLoading] = useState(true); const [showCreate, setShowCreate] = useState(false); const [projectDraft, setProjectDraft] = useState<ProjectDraft>(); const [autoLoadJiraProjects, setAutoLoadJiraProjects] = useState(false); const [autoLoadGitHubRepositories, setAutoLoadGitHubRepositories] = useState(false); const router = useRouter();
   useEffect(() => { void (async () => { try { const result = await api.projects(); setProjects(result.items); const taskPages = await Promise.all(result.items.map((project) => api.projectTasks(project.project_id))); setTasks(taskPages.flatMap((page) => page.items)); } catch (caught) { setError(caught instanceof Error ? caught.message : "The API is unavailable."); } finally { setLoading(false); } })(); }, []);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -20,8 +20,7 @@ export function ProjectsPage() {
     const jiraError = params.get("jira_error");
     const githubStatus = params.get("github_status");
     const githubError = params.get("github_error");
-    const githubInstallationId = params.get("github_installation_id");
-    if (!jiraStatus && !jiraError && !githubStatus && !githubError && !githubInstallationId) return;
+    if (!jiraStatus && !jiraError && !githubStatus && !githubError) return;
 
     startTransition(() => {
       setShowCreate(true);
@@ -29,7 +28,6 @@ export function ProjectsPage() {
       setJiraConnectError(jiraError);
       setAutoLoadGitHubRepositories(githubStatus === "connected");
       setGitHubConnectError(githubError);
-      if (githubInstallationId) setConnectedGitHubInstallationId(githubInstallationId);
     });
     const savedDraft = sessionStorage.getItem("astra_project_create_draft");
     if (savedDraft) {
@@ -37,27 +35,24 @@ export function ProjectsPage() {
         const parsedDraft = JSON.parse(savedDraft) as ProjectDraft;
         const draft = {
           ...parsedDraft,
-          github_installation_id: githubInstallationId ?? parsedDraft.github_installation_id ?? "",
+          github_installation_id: parsedDraft.github_installation_id ?? "",
         };
         startTransition(() => setProjectDraft(draft));
       } catch {
         sessionStorage.removeItem("astra_project_create_draft");
       }
       sessionStorage.removeItem("astra_project_create_draft");
-    } else if (githubInstallationId) {
-      startTransition(() => setProjectDraft({ github_installation_id: githubInstallationId }));
     }
 
     params.delete("jira_status");
     params.delete("jira_error");
     params.delete("github_status");
     params.delete("github_error");
-    params.delete("github_installation_id");
     const remainingQuery = params.toString();
     window.history.replaceState({}, "", `${window.location.pathname}${remainingQuery ? `?${remainingQuery}` : ""}`);
   }, []);
   const filtered = projects.filter((project) => `${project.name} ${project.project_id}`.toLowerCase().includes(query.toLowerCase()));
-  async function createProject(value: ProjectFormValues) { try { const project = await api.createProject({ project_id: value.project_id, name: value.name, description: value.description || null, status: value.status, owner_employee_id: value.owner_employee_id || null, department: value.department || null, github: value.github_repository_id ? { provider: "github", installation_id: value.github_installation_id, repository_id: value.github_repository_id } : null, jira: value.jira_project_id && value.jira_project_key ? { provider: "jira", project_id: value.jira_project_id, project_key: value.jira_project_key } : null }); sessionStorage.removeItem("astra_project_create_draft"); setProjects((current) => [...current, project]); setShowCreate(false); router.push(`/dashboard/projects/${project.project_id}`); } catch (caught) { setError(caught instanceof Error ? caught.message : "Project could not be created."); } }
+  async function createProject(value: ProjectFormValues) { try { const project = await api.createProject({ project_id: value.project_id, name: value.name, description: value.description || null, status: value.status, owner_employee_id: value.owner_employee_id || null, department: value.department || null, github: value.github_repository_id ? { provider: "github", repository_id: value.github_repository_id } : null, jira: value.jira_project_id && value.jira_project_key ? { provider: "jira", project_id: value.jira_project_id, project_key: value.jira_project_key } : null }); sessionStorage.removeItem("astra_project_create_draft"); setProjects((current) => [...current, project]); setShowCreate(false); router.push(`/dashboard/projects/${project.project_id}`); } catch (caught) { setError(caught instanceof Error ? caught.message : "Project could not be created."); } }
   return (
     <div className="page">
       <div className="page-heading">
@@ -68,7 +63,7 @@ export function ProjectsPage() {
         {jiraConnectError && <small className="field-error">Jira could not be connected{jiraConnectError.startsWith("callback-") ? ` (backend HTTP ${jiraConnectError.slice("callback-".length)})` : ""}. Your project details are still here; you can retry.</small>}
         {githubConnectError && <small className="field-error">GitHub connection failed. Your project details are still here; you can retry.</small>}
         <ProjectForm defaultValues={projectDraft} autoLoadJiraProjects={autoLoadJiraProjects} autoLoadGitHubRepositories={autoLoadGitHubRepositories} onSubmit={createProject} submitLabel="Create project" />
-        <ProjectForm defaultValues={projectDraft} autoLoadJiraProjects={autoLoadJiraProjects} autoLoadGitHubRepositories={autoLoadGitHubRepositories} connectedGitHubInstallationId={connectedGitHubInstallationId} onSubmit={createProject} submitLabel="Create project" />
+        <ProjectForm defaultValues={projectDraft} autoLoadJiraProjects={autoLoadJiraProjects} autoLoadGitHubRepositories={autoLoadGitHubRepositories} onSubmit={createProject} submitLabel="Create project" />
       </>}
       <div className="toolbar"><input aria-label="Search projects" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects..." /></div>
       {error ? <ErrorState message={error} /> : <div className="panel">{loading ? <div className="workload"><Skeleton /><Skeleton /><Skeleton /></div> : filtered.length === 0 ? <EmptyState title={projects.length ? "No matching projects" : "No projects yet"}>{projects.length ? "Try another search term." : "Create your first project to start tracking work."}</EmptyState> : filtered.map((project) => { const projectTasks = tasks.filter((task) => task.project_id === project.project_id); const progress = projectTasks.length ? Math.round(projectTasks.reduce((sum, task) => sum + task.progress, 0) / projectTasks.length) : 0; return <div className="project-row" key={project.project_id}><Link className="project-name" href={`/dashboard/projects/${project.project_id}/tasks`}>{project.name}<span className="project-id">{project.project_id}</span></Link><div className="progress-cell"><span className="progress-value">{progress}% complete</span><ProgressBar value={progress} /></div><span>{projectTasks.length} tasks</span><StatusBadge value={project.status} /><span>{project.department ?? "Unassigned"}</span></div>; })}</div>}

@@ -12,8 +12,6 @@ from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlparse
 
 import httpx
-import jwt
-
 from app.core.config import get_settings
 
 
@@ -37,21 +35,15 @@ class GitHubAppService:
         if self._settings_cache is not None:
             return self._settings_cache
         settings = get_settings()
-        required = (
-            settings.github_app_id,
-            settings.github_client_id,
-            settings.github_private_key,
-        )
-        if not all(required):
-            raise GitHubAppConfigurationError("GitHub App is not configured")
+        if not settings.github_personal_access_token:
+            raise GitHubAppConfigurationError("GitHub personal access token is not configured")
         self._settings_cache = settings
         return settings
 
     def _state_key(self) -> bytes:
         settings = self._settings()
-        private_key = (settings.github_private_key or "").replace("\\n", "\n").encode()
-        client_id = (settings.github_client_id or "").encode()
-        return hashlib.sha256(b"astra-github-install-state\0" + client_id + b"\0" + private_key).digest()
+        token = (settings.github_personal_access_token or "").encode()
+        return hashlib.sha256(b"astra-github-pat-state\0" + token).digest()
 
     @staticmethod
     def _b64encode(value: bytes) -> str:
@@ -60,16 +52,6 @@ class GitHubAppService:
     @staticmethod
     def _b64decode(value: str) -> bytes:
         return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-
-    def _app_jwt(self) -> str:
-        settings = self._settings()
-        now = int(time.time())
-        private_key = (settings.github_private_key or "").replace("\\n", "\n")
-        return jwt.encode(
-            {"iat": now - 30, "exp": now + 540, "iss": settings.github_app_id},
-            private_key,
-            algorithm="RS256",
-        )
 
     @staticmethod
     def _safe_return_to(return_to: str | None) -> str:
@@ -114,21 +96,11 @@ class GitHubAppService:
             "return_to": self._safe_return_to(payload.get("return_to")),
         }
 
-    def start_installation(
+    def start_connection(
         self, employee_id: str, return_to: str = "/dashboard/projects"
     ) -> dict[str, str]:
-        settings = self._settings()
-        app_metadata = self._app_get("/app")
-        if str(app_metadata.get("id")) != str(settings.github_app_id):
-            raise GitHubAppConfigurationError("Configured GitHub App ID does not match GitHub")
-        if app_metadata.get("client_id") != settings.github_client_id:
-            raise GitHubAppConfigurationError("Configured GitHub client ID does not match GitHub App")
-        slug = app_metadata.get("slug")
-        if not isinstance(slug, str) or not slug:
-            raise GitHubAppError("GitHub App slug was not available")
-        state = self._sign_state(employee_id, return_to)
-        url = f"https://github.com/apps/{quote(slug, safe='')}/installations/new"
-        return {"install_url": f"{url}?{urlencode({'state': state})}"}
+        self._github_get("/user")
+        return {"connected": "true", "return_to": self._safe_return_to(return_to)}
 
     def callback_redirect(
         self,
@@ -136,15 +108,12 @@ class GitHubAppService:
         connected: bool,
         error: str | None = None,
         return_to: str = "/dashboard/projects",
-        installation_id: str | None = None,
     ) -> str:
         settings = get_settings()
         destination = (settings.github_frontend_url or "http://localhost:3000").rstrip("/")
         destination += self._safe_return_to(return_to)
         separator = "&" if "?" in destination else "?"
         params = urlencode({"github_status": "connected" if connected else "error"})
-        if installation_id:
-            params += "&" + urlencode({"github_installation_id": installation_id})
         if error:
             params += "&" + urlencode({"github_error": error})
         return f"{destination}{separator}{params}"
@@ -179,8 +148,8 @@ class GitHubAppService:
             raise GitHubAppError(f"GitHub API request failed (status={response.status_code})")
         return response
 
-    def _app_get(self, path: str) -> dict[str, Any]:
-        response = self._request("GET", f"{GITHUB_API}{path}", self._app_jwt(), app_auth=True)
+    def _github_get(self, path: str) -> dict[str, Any]:
+        response = self._request("GET", f"{GITHUB_API}{path}", self._settings().github_personal_access_token or "")
         try:
             payload = response.json()
         except ValueError as error:
@@ -188,53 +157,6 @@ class GitHubAppService:
         if not isinstance(payload, dict):
             raise GitHubAppError("GitHub returned an invalid response")
         return payload
-
-    def complete_installation(
-        self,
-        installation_id: str | None,
-        state: str | None,
-    ) -> dict[str, str]:
-        state_payload = self._verify_state(state)
-        if not installation_id or not installation_id.isdigit():
-            raise ValueError("GitHub installation ID is invalid")
-        installation = self._app_get(f"/app/installations/{installation_id}")
-        if str(installation.get("id")) != installation_id:
-            raise ValueError("GitHub installation could not be verified")
-        account = installation.get("account") or {}
-        account_login = account.get("login")
-        if not account_login:
-            raise GitHubAppError("GitHub installation account was not available")
-        logger.info(
-            "GitHub App installation verified: installation_id=%s account_login=%s",
-            installation_id,
-            account_login,
-        )
-        return {
-            "return_to": state_payload["return_to"],
-            "installation_id": installation_id,
-        }
-
-    def _installation_token(self, installation_id: str) -> str:
-        app_jwt = self._app_jwt()
-        response = httpx.post(
-            f"{GITHUB_API}/app/installations/{quote(installation_id, safe='')}/access_tokens",
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {app_jwt}",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            timeout=20,
-        )
-        if response.status_code >= 400:
-            logger.warning("GitHub installation token request failed: status_code=%s", response.status_code)
-            raise GitHubAppError(f"GitHub installation token request failed (status={response.status_code})")
-        try:
-            token = response.json().get("token")
-        except (ValueError, AttributeError) as error:
-            raise GitHubAppError("GitHub installation token response was invalid") from error
-        if not isinstance(token, str) or not token:
-            raise GitHubAppError("GitHub did not return an installation token")
-        return token
 
     @staticmethod
     def _next_page(response: httpx.Response) -> str | None:
@@ -263,23 +185,15 @@ class GitHubAppService:
             next_url = self._next_page(response)
         return items
 
-    def _installation_repositories(self, installation_id: str) -> list[Any]:
-        token = self._installation_token(installation_id)
+    def _user_repositories(self) -> list[Any]:
         return self._list_pages(
-            f"{GITHUB_API}/installation/repositories?per_page=100",
-            token,
+            f"{GITHUB_API}/user/repos?per_page=100&affiliation=owner,collaborator,organization_member",
+            self._settings().github_personal_access_token or "",
         )
 
-    def list_repositories_for_installation(
-        self, installation_id: str
-    ) -> list[dict[str, Any]]:
-        if not installation_id.isdigit():
-            raise ValueError("GitHub installation ID is invalid")
-        installation = self._app_get(f"/app/installations/{installation_id}")
-        if str(installation.get("id")) != installation_id:
-            raise ValueError("GitHub installation could not be verified")
+    def list_repositories(self) -> list[dict[str, Any]]:
         repositories = []
-        for item in self._installation_repositories(installation_id):
+        for item in self._user_repositories():
             if not isinstance(item, dict) or item.get("id") is None:
                 continue
             owner = item.get("owner") or {}
@@ -291,41 +205,32 @@ class GitHubAppService:
                     "organization": owner_login,
                     "repository": repository_name,
                     "default_branch": item.get("default_branch") or "main",
-                    "installation_id": installation_id,
                     "full_name": item.get("full_name") or f"{owner_login}/{repository_name}",
                 }
             )
         return repositories
 
-    def resolve_repository_for_installation(
-        self, installation_id: str, repository_id: str
-    ) -> dict[str, Any]:
+    def resolve_repository(self, repository_id: str) -> dict[str, Any]:
         match = next(
             (
-                repository for repository in self.list_repositories_for_installation(installation_id)
+                repository for repository in self.list_repositories()
                 if repository["repository_id"] == str(repository_id)
             ),
             None,
         )
         if match is None:
-            raise ValueError("Selected GitHub repository is not available to this installation")
+            raise ValueError("Selected GitHub repository is not available to the configured GitHub account")
         return match
 
     def verify_project_repository(
         self, github: dict[str, Any]
-    ) -> tuple[str, str, str]:
-        installation_id = str(github.get("installation_id") or "")
+    ) -> tuple[str, str]:
         repository_id = str(github.get("repository_id") or "")
         organization = str(github.get("organization") or "")
         repository = str(github.get("repository") or "")
-        if not installation_id or not installation_id.isdigit():
-            raise ValueError("GitHub installation ID is invalid")
         if not repository_id or not organization or not repository:
             raise ValueError("Astra project GitHub mapping is incomplete")
-        installation = self._app_get(f"/app/installations/{installation_id}")
-        if str(installation.get("id")) != installation_id:
-            raise ValueError("GitHub installation could not be verified")
-        return installation_id, organization, repository
+        return organization, repository
 
     def _repository_api(
         self,
@@ -334,10 +239,10 @@ class GitHubAppService:
         employee_repository: Any,
         path: str,
     ) -> list[Any]:
-        installation_id, organization, repository = self.verify_project_repository(
+        organization, repository = self.verify_project_repository(
             github
         )
-        token = self._installation_token(installation_id)
+        token = self._settings().github_personal_access_token or ""
         endpoint, _, query = path.partition("?")
         params = {"per_page": "100", **dict(parse_qsl(query, keep_blank_values=True))}
         return self._list_pages(
@@ -357,10 +262,10 @@ class GitHubAppService:
         raw_pulls = self._repository_api(
             employee_id, github, employee_repository, "pulls?state=all"
         )
-        installation_id, organization, repository = self.verify_project_repository(
+        organization, repository = self.verify_project_repository(
             github
         )
-        token = self._installation_token(installation_id)
+        token = self._settings().github_personal_access_token or ""
         normalized = []
         for pull in raw_pulls:
             if not isinstance(pull, dict):
