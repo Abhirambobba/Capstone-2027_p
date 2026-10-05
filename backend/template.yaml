@@ -31,6 +31,23 @@ Parameters:
     Type: String
     Default: 71pp1273ea6t7muvmujqcvabcn
     Description: Existing public Cognito app client ID.
+  GitHubAppId:
+    Type: String
+    Default: ''
+    Description: Existing GitHub App ID.
+  GitHubClientId:
+    Type: String
+    Default: ''
+    Description: Existing GitHub App client ID.
+  GitHubPrivateKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Existing GitHub App private key; keep this backend-only.
+  AstraFrontendUrl:
+    Type: String
+    Default: http://localhost:3000
+    Description: Frontend projects URL used after GitHub App installation.
 
 Resources:
   AstraEmployees:
@@ -43,6 +60,8 @@ Resources:
           AttributeType: S
         - AttributeName: cognito_user_id
           AttributeType: S
+        - AttributeName: github_user_id
+          AttributeType: S
       KeySchema:
         - AttributeName: employee_id
           KeyType: HASH
@@ -50,6 +69,12 @@ Resources:
         - IndexName: CognitoUserIndex
           KeySchema:
             - AttributeName: cognito_user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: GitHubUserIndex
+          KeySchema:
+            - AttributeName: github_user_id
               KeyType: HASH
           Projection:
             ProjectionType: ALL
@@ -201,6 +226,10 @@ Resources:
           COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
           COGNITO_CLIENT_ID: !Ref CognitoClientId
           COGNITO_REGION: !Ref AWS::Region
+          GITHUB_APP_ID: !Ref GitHubAppId
+          GITHUB_CLIENT_ID: !Ref GitHubClientId
+          GITHUB_PRIVATE_KEY: !Ref GitHubPrivateKey
+          GITHUB_FRONTEND_URL: !Ref AstraFrontendUrl
       Policies:
         - Statement:
             - Sid: EmployeeTableAccess
@@ -214,6 +243,7 @@ Resources:
               Resource:
                 - !GetAtt AstraEmployees.Arn
                 - !Sub '${AstraEmployees.Arn}/index/CognitoUserIndex'
+                - !Sub '${AstraEmployees.Arn}/index/GitHubUserIndex'
         - Statement:
             - Sid: ProjectTableAccess
               Effect: Allow
@@ -413,6 +443,41 @@ Resources:
           Type: Api
           Properties:
             Path: /api/v1/me/activity
+            Method: get
+        GitHubConnect:
+          Type: Api
+          Properties:
+            Path: /api/v1/integrations/github/connect
+            Method: get
+        GitHubCallback:
+          Type: Api
+          Properties:
+            Path: /api/v1/integrations/github/callback
+            Method: get
+        GitHubRepositories:
+          Type: Api
+          Properties:
+            Path: /api/v1/integrations/github/repositories
+            Method: get
+        GitHubDebugRepositories:
+          Type: Api
+          Properties:
+            Path: /api/v1/integrations/github/debug/installations/{installation_id}/repositories
+            Method: get
+        GitHubPullRequests:
+          Type: Api
+          Properties:
+            Path: /api/v1/integrations/github/projects/{astra_project_id}/pulls
+            Method: get
+        GitHubCommits:
+          Type: Api
+          Properties:
+            Path: /api/v1/integrations/github/projects/{astra_project_id}/commits
+            Method: get
+        GitHubIssues:
+          Type: Api
+          Properties:
+            Path: /api/v1/integrations/github/projects/{astra_project_id}/issues
             Method: get
 
 Outputs:

@@ -20,6 +20,13 @@ class EmployeeAuthPatch(BaseModel):
     cognito_user_id: str | None = None
 
 
+class EmployeeGitHub(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    user_id: str | None = None
+    login: str | None = None
+
+
 class AgentMetadata(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -41,6 +48,7 @@ class EmployeeCreate(BaseModel):
     manager_id: str | None = None
     access_role: AccessRole = "EMPLOYEE"
     auth: EmployeeAuth = Field(default_factory=EmployeeAuth)
+    github: EmployeeGitHub | None = None
 
 
 class EmployeePatch(BaseModel):
@@ -54,6 +62,7 @@ class EmployeePatch(BaseModel):
     employment_status: EmploymentStatus | None = None
     access_role: AccessRole | None = None
     auth: EmployeeAuthPatch | None = None
+    github: EmployeeGitHub | None = None
 
 
 class Employee(BaseModel):
@@ -67,6 +76,7 @@ class Employee(BaseModel):
     manager_id: str | None = None
     access_role: AccessRole = "EMPLOYEE"
     auth: EmployeeAuth = Field(default_factory=EmployeeAuth)
+    github: EmployeeGitHub | None = None
     employment_status: EmploymentStatus
     agent: AgentMetadata = Field(default_factory=AgentMetadata)
     created_at: datetime

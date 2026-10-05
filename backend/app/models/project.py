@@ -24,6 +24,14 @@ class GitHubConfig(BaseModel):
     installation_id: str = Field(min_length=1)
 
 
+class GitHubRepositorySelection(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    provider: Literal["github"] = "github"
+    installation_id: str = Field(min_length=1)
+    repository_id: str = Field(min_length=1)
+
+
 class JiraConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -54,7 +62,7 @@ class ProjectCreateRequest(BaseModel):
     status: ProjectStatus = "PLANNED"
     owner_employee_id: str | None = None
     department: str | None = None
-    github: GitHubConfig | None = None
+    github: GitHubRepositorySelection | GitHubConfig | None = None
     jira: JiraConfig | None = None
 
 
@@ -66,7 +74,7 @@ class ProjectUpdateRequest(BaseModel):
     status: ProjectStatus | None = None
     owner_employee_id: str | None = None
     department: str | None = None
-    github: GitHubConfig | None = None
+    github: GitHubRepositorySelection | GitHubConfig | None = None
     jira: JiraConfig | None = None
 
 

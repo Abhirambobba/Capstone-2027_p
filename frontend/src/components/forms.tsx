@@ -7,27 +7,58 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Employee, Team } from "@/lib/types";
 
-const employeeSchema = z.object({ employee_id: z.string().min(1, "Employee ID is required"), name: z.string().min(1, "Name is required"), email: z.string().email("Enter a valid email"), role: z.string().min(1, "Role is required"), department: z.string().min(1, "Department is required"), manager_id: z.string(), employment_status: z.enum(["ACTIVE", "INACTIVE", "ON_LEAVE"]), access_role: z.enum(["MANAGER", "EMPLOYEE"]), cognito_user_id: z.string() });
-const projectSchema = z.object({ project_id: z.string().min(1, "Project ID is required"), name: z.string().min(1, "Name is required"), description: z.string().default(""), owner_employee_id: z.string().default(""), department: z.string().default(""), status: z.enum(["PLANNED", "ACTIVE", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "ARCHIVED"]), github_organization: z.string().default(""), github_repository: z.string().default(""), github_repository_id: z.string().default(""), github_default_branch: z.string().default("main"), github_installation_id: z.string().default(""), jira_project_id: z.string().optional().default(""), jira_project_key: z.string().optional().default("") });
+const employeeSchema = z.object({ employee_id: z.string().min(1, "Employee ID is required"), name: z.string().min(1, "Name is required"), email: z.string().email("Enter a valid email"), role: z.string().min(1, "Role is required"), department: z.string().min(1, "Department is required"), manager_id: z.string(), employment_status: z.enum(["ACTIVE", "INACTIVE", "ON_LEAVE"]), access_role: z.enum(["MANAGER", "EMPLOYEE"]), cognito_user_id: z.string(), github_user_id: z.string().default(""), github_login: z.string().default("") });
+const projectSchema = z.object({ project_id: z.string().min(1, "Project ID is required"), name: z.string().min(1, "Name is required"), description: z.string().default(""), owner_employee_id: z.string().default(""), department: z.string().default(""), status: z.enum(["PLANNED", "ACTIVE", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "ARCHIVED"]), github_installation_id: z.string().default(""), github_repository_id: z.string().default(""), jira_project_id: z.string().optional().default(""), jira_project_key: z.string().optional().default("") });
 const teamSchema = z.object({ team_id: z.string().min(1, "Team ID is required"), name: z.string().min(1, "Name is required"), description: z.string(), team_lead_id: z.string(), status: z.enum(["ACTIVE", "INACTIVE"]) });
 const membershipSchema = z.object({ employee_id: z.string().min(1, "Employee is required"), role: z.string().min(1, "Role is required"), allocation_percentage: z.coerce.number().min(0).max(100), team_id: z.string(), status: z.enum(["ACTIVE", "INACTIVE"]) });
 const taskSchema = z.object({ task_id: z.string().min(1, "Task ID is required"), title: z.string().min(1, "Title is required"), description: z.string(), jira_issue_key: z.string(), assignee_id: z.string(), team_id: z.string(), priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]), estimated_hours: z.coerce.number().min(0).nullable(), actual_hours: z.coerce.number().min(0), acceptance_criteria: z.string() });
 
 type FormProps<T> = { defaultValues?: Partial<T>; onSubmit: (value: T) => void | Promise<void>; submitting?: boolean; submitLabel?: string };
 export type EmployeeFormValues = z.infer<typeof employeeSchema>;
+export type ProjectFormValues = z.infer<typeof projectSchema>;
 function FieldError({ message }: { message?: string }) { return message ? <small className="field-error">{message}</small> : null; }
 function FormActions({ submitting, submitLabel }: { submitting?: boolean; submitLabel: string }) { return <button className="button primary" type="submit" disabled={submitting}>{submitting ? "Saving..." : submitLabel}</button>; }
 
 export function EmployeeForm({ defaultValues, onSubmit, submitting, submitLabel = "Save employee" }: FormProps<z.infer<typeof employeeSchema>>) {
-  const { register, handleSubmit, formState: { errors } } = useForm<z.input<typeof employeeSchema>, unknown, z.output<typeof employeeSchema>>({ resolver: zodResolver(employeeSchema), defaultValues: { employee_id: "", manager_id: "", employment_status: "ACTIVE", access_role: "EMPLOYEE", cognito_user_id: "", ...defaultValues } });
-  return <form className="form-panel" onSubmit={handleSubmit(onSubmit)}><label>Employee ID<input {...register("employee_id")} readOnly={Boolean(defaultValues?.employee_id)} /> <FieldError message={errors.employee_id?.message} /></label><label>Name<input {...register("name")} /> <FieldError message={errors.name?.message} /></label><label>Email<input type="email" {...register("email")} /> <FieldError message={errors.email?.message} /></label><label>Job role<input {...register("role")} /> <FieldError message={errors.role?.message} /></label><label>Department<input {...register("department")} /> <FieldError message={errors.department?.message} /></label><label>Manager ID<input {...register("manager_id")} /></label>{!defaultValues?.employee_id && <><label>Access role<select {...register("access_role")}><option value="EMPLOYEE">Employee</option><option value="MANAGER">Manager</option></select></label><label>Cognito user ID (sub)<input {...register("cognito_user_id")} /></label></>}<label>Employment status<select {...register("employment_status")}><option>ACTIVE</option><option>INACTIVE</option><option>ON_LEAVE</option></select></label><FormActions submitting={submitting} submitLabel={submitLabel} /></form>;
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm<z.input<typeof employeeSchema>, unknown, z.output<typeof employeeSchema>>({ resolver: zodResolver(employeeSchema), defaultValues: { employee_id: "", manager_id: "", employment_status: "ACTIVE", access_role: "EMPLOYEE", cognito_user_id: "", github_user_id: "", github_login: "", ...defaultValues } });
+  const employeeId = defaultValues?.employee_id;
+  const needsGitHubIdentity = Boolean(employeeId && defaultValues?.github_user_id === undefined && defaultValues?.github_login === undefined);
+  useEffect(() => {
+    if (!employeeId || !needsGitHubIdentity) return;
+    let active = true;
+    void api.employee(employeeId).then((employee) => {
+      if (!active) return;
+      setValue("github_user_id", employee.github?.user_id ?? "");
+      setValue("github_login", employee.github?.login ?? "");
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [employeeId, needsGitHubIdentity, setValue]);
+  return (
+    <form className="form-panel" onSubmit={handleSubmit(onSubmit)}>
+      <label>Employee ID<input {...register("employee_id")} readOnly={Boolean(defaultValues?.employee_id)} /> <FieldError message={errors.employee_id?.message} /></label>
+      <label>Name<input {...register("name")} /> <FieldError message={errors.name?.message} /></label>
+      <label>Email<input type="email" {...register("email")} /> <FieldError message={errors.email?.message} /></label>
+      <label>Job role<input {...register("role")} /> <FieldError message={errors.role?.message} /></label>
+      <label>Department<input {...register("department")} /> <FieldError message={errors.department?.message} /></label>
+      <label>Manager ID<input {...register("manager_id")} /></label>
+      {!defaultValues?.employee_id && <><label>Access role<select {...register("access_role")}><option value="EMPLOYEE">Employee</option><option value="MANAGER">Manager</option></select></label><label>Cognito user ID (sub)<input {...register("cognito_user_id")} /></label></>}
+      <p className="form-context">GitHub identity (numeric user ID is used for attribution)</p>
+      <label>GitHub user ID<input inputMode="numeric" {...register("github_user_id")} /></label>
+      <label>GitHub login<input {...register("github_login")} /></label>
+      <label>Employment status<select {...register("employment_status")}><option>ACTIVE</option><option>INACTIVE</option><option>ON_LEAVE</option></select></label>
+      <FormActions submitting={submitting} submitLabel={submitLabel} />
+    </form>
+  );
 }
 
-export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel = "Save project", autoLoadJiraProjects = false }: FormProps<z.infer<typeof projectSchema>> & { autoLoadJiraProjects?: boolean }) {
-  const { register, handleSubmit, setValue, watch, getValues, formState: { errors } } = useForm<z.input<typeof projectSchema>, unknown, z.output<typeof projectSchema>>({ resolver: zodResolver(projectSchema), defaultValues: { project_id: "", description: "", owner_employee_id: "", department: "", status: "PLANNED", github_organization: "", github_repository: "", github_repository_id: "", github_default_branch: "main", github_installation_id: "", jira_project_id: "", jira_project_key: "", ...defaultValues } });
+export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel = "Save project", autoLoadJiraProjects = false, autoLoadGitHubRepositories = false, connectedGitHubInstallationId, githubReturnTo = "/dashboard/projects", showJiraIntegration = true }: FormProps<z.infer<typeof projectSchema>> & { autoLoadJiraProjects?: boolean; autoLoadGitHubRepositories?: boolean; connectedGitHubInstallationId?: string; githubReturnTo?: string; showJiraIntegration?: boolean }) {
+  const { register, handleSubmit, setValue, watch, getValues, formState: { errors } } = useForm<z.input<typeof projectSchema>, unknown, z.output<typeof projectSchema>>({ resolver: zodResolver(projectSchema), defaultValues: { project_id: "", description: "", owner_employee_id: "", department: "", status: "PLANNED", github_installation_id: "", github_repository_id: "", jira_project_id: "", jira_project_key: "", ...defaultValues } });
   const [jiraProjects, setJiraProjects] = useState<Array<{ id: string; key: string; name: string }>>([]);
   const [jiraStatus, setJiraStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [jiraError, setJiraError] = useState<string | null>(null);
+  const [githubRepositories, setGitHubRepositories] = useState<Array<{ repository_id: string; organization: string; repository: string; full_name: string }>>([]);
+  const [githubStatus, setGitHubStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [githubError, setGitHubError] = useState<string | null>(null);
   const selectedProjectId = watch("jira_project_id");
 
   useEffect(() => {
@@ -52,9 +83,53 @@ export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel =
       });
   }, [autoLoadJiraProjects]);
 
+  useEffect(() => {
+    if (connectedGitHubInstallationId) {
+      setValue("github_installation_id", connectedGitHubInstallationId);
+    }
+    if (!autoLoadGitHubRepositories || !connectedGitHubInstallationId) return;
+    const projectId = getValues("project_id");
+    if (!projectId) {
+      setGitHubStatus("error");
+      setGitHubError("Enter the Astra project ID before loading repositories.");
+      return;
+    }
+    setGitHubStatus("loading");
+    void api.githubRepositories(connectedGitHubInstallationId, projectId)
+      .then((result) => {
+        setGitHubRepositories(result.repositories);
+        setGitHubStatus("ready");
+      })
+      .catch((caught: unknown) => {
+        setGitHubStatus("error");
+        setGitHubError(caught instanceof Error ? caught.message : "GitHub repositories could not be loaded.");
+      });
+  }, [autoLoadGitHubRepositories, connectedGitHubInstallationId, getValues, setValue]);
+
   function connectJira() {
     sessionStorage.setItem("astra_project_create_draft", JSON.stringify(getValues()));
     window.location.href = "/api/integrations/jira/connect?returnTo=%2Fdashboard%2Fprojects";
+  }
+
+  function connectGitHub() {
+    sessionStorage.setItem("astra_project_create_draft", JSON.stringify(getValues()));
+    window.location.href = `/api/integrations/github/connect?returnTo=${encodeURIComponent(githubReturnTo)}`;
+  }
+
+  async function loadGitHubRepositories(installationId = getValues("github_installation_id")) {
+    setGitHubStatus("loading");
+    setGitHubError(null);
+    try {
+      if (!installationId) throw new Error("Connect GitHub for this project first.");
+      const projectId = getValues("project_id");
+      if (!projectId) throw new Error("Enter the Astra project ID before loading repositories.");
+      const result = await api.githubRepositories(installationId, projectId);
+      setGitHubRepositories(result.repositories);
+      setGitHubStatus("ready");
+    } catch (caught) {
+      setGitHubStatus("error");
+      setGitHubError(caught instanceof Error ? caught.message : "GitHub repositories could not be loaded.");
+    }
   }
 
   async function loadJiraProjects() {
@@ -78,23 +153,29 @@ export function ProjectForm({ defaultValues, onSubmit, submitting, submitLabel =
       <label>Owner employee ID<input {...register("owner_employee_id")} /></label>
       <label>Department<input {...register("department")} /></label>
       <label>Status<select {...register("status")}><option>PLANNED</option><option>ACTIVE</option><option>IN_PROGRESS</option><option>ON_HOLD</option><option>COMPLETED</option><option>ARCHIVED</option></select></label>
-      <p className="form-context">GitHub metadata (no secrets)</p>
-      <label>Organization<input {...register("github_organization")} /></label>
-      <label>Repository<input {...register("github_repository")} /></label>
-      <label>Repository ID<input {...register("github_repository_id")} /></label>
-      <label>Default branch<input {...register("github_default_branch")} /></label>
-      <label>Installation ID<input {...register("github_installation_id")} /></label>
       <div className="form-context">
-        <span>Jira project (server-selected, no cloud ID entry)</span>
-        <button type="button" className="button secondary" onClick={connectJira}>Connect Jira</button>
+        <span>GitHub</span>
+        <button type="button" className="button secondary" onClick={connectGitHub}>Connect GitHub</button>
       </div>
-      {jiraStatus === "error" && <small className="field-error">{jiraError ?? "Jira project list could not be loaded."}</small>}
-      <button type="button" className="button secondary" onClick={() => void loadJiraProjects()} disabled={jiraStatus === "loading"}>
-        {jiraStatus === "loading" ? "Loading projects..." : "Load connected projects"}
+      <input type="hidden" {...register("github_installation_id")} />
+      {githubStatus === "error" && <small className="field-error">{githubError}</small>}
+      <button type="button" className="button secondary" onClick={() => void loadGitHubRepositories()} disabled={githubStatus === "loading"}>
+        {githubStatus === "loading" ? "Loading repositories..." : "Load connected repositories"}
       </button>
-      <label>Project<select {...register("jira_project_id")}><option value="">Select Jira project</option>{jiraProjects.map((project) => <option key={project.id} value={project.id}>{project.key} — {project.name}</option>)}</select></label>
-      <label>Project key<input {...register("jira_project_key")} readOnly /></label>
-      {jiraStatus === "ready" && <small className="form-hint">The selected Jira project will be saved against the authenticated employee connection.</small>}
+      <label>Repository<select {...register("github_repository_id")}><option value="">Select GitHub repository</option>{githubRepositories.map((repository) => <option key={repository.repository_id} value={repository.repository_id}>{repository.full_name || `${repository.organization} / ${repository.repository}`}</option>)}</select></label>
+      {showJiraIntegration && <>
+        <div className="form-context">
+          <span>Jira project (server-selected, no cloud ID entry)</span>
+          <button type="button" className="button secondary" onClick={connectJira}>Connect Jira</button>
+        </div>
+        {jiraStatus === "error" && <small className="field-error">{jiraError ?? "Jira project list could not be loaded."}</small>}
+        <button type="button" className="button secondary" onClick={() => void loadJiraProjects()} disabled={jiraStatus === "loading"}>
+          {jiraStatus === "loading" ? "Loading projects..." : "Load connected projects"}
+        </button>
+        <label>Jira project<select {...register("jira_project_id")}><option value="">Select Jira project</option>{jiraProjects.map((project) => <option key={project.id} value={project.id}>{project.key} — {project.name}</option>)}</select></label>
+        <label>Project key<input {...register("jira_project_key")} readOnly /></label>
+        {jiraStatus === "ready" && <small className="form-hint">The selected Jira project will be saved against the authenticated employee connection.</small>}
+      </>}
       <FormActions submitting={submitting} submitLabel={submitLabel} />
     </form>
   );

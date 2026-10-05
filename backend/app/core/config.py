@@ -15,6 +15,10 @@ class Settings:
     jira_client_id: str | None = None
     jira_client_secret: str | None = None
     jira_callback_url: str | None = None
+    github_app_id: str | None = None
+    github_client_id: str | None = None
+    github_private_key: str | None = None
+    github_frontend_url: str | None = None
 
 
 def get_settings() -> Settings:
@@ -33,4 +37,8 @@ def get_settings() -> Settings:
         jira_client_id=os.getenv("JIRA_CLIENT_ID"),
         jira_client_secret=os.getenv("JIRA_CLIENT_SECRET"),
         jira_callback_url=os.getenv("JIRA_CALLBACK_URL"),
+        github_app_id=os.getenv("GITHUB_APP_ID"),
+        github_client_id=os.getenv("GITHUB_CLIENT_ID"),
+        github_private_key=os.getenv("GITHUB_PRIVATE_KEY"),
+        github_frontend_url=os.getenv("GITHUB_FRONTEND_URL"),
     )

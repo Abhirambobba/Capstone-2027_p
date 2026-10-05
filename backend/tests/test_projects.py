@@ -155,19 +155,63 @@ def test_valid_owner_employee():
     assert response.json()["owner_employee_id"] == "EMP_001"
 
 
-def test_github_metadata():
-    payload = project_payload()
+def test_github_metadata_does_not_require_employee_github_identity():
+    class FakeGitHubService:
+        def resolve_repository_for_installation(self, installation_id, repository_id):
+            assert installation_id == "167959604"
+            assert repository_id == "1142228151"
+            return {
+                "organization": "souriesh",
+                "repository": "MCP-Capstone",
+                "repository_id": "1142228151",
+                "default_branch": "main",
+                "installation_id": "167959604",
+            }
+
+    payload = project_payload(project_id="123456")
     payload["github"] = {
         "provider": "github",
-        "organization": "my-org",
-        "repository": "astra",
-        "repository_id": "123456",
+        "organization": "client-supplied-values-are-ignored",
+        "repository": "client-supplied-values-are-ignored",
+        "repository_id": "1142228151",
         "default_branch": "main",
-        "installation_id": "install-123",
+        "installation_id": "167959604",
     }
-    response = client.post("/api/v1/management/projects", json=payload)
+    app.dependency_overrides["github_app_service_override"] = FakeGitHubService()
+    try:
+        response = client.post("/api/v1/management/projects", json=payload)
+    finally:
+        app.dependency_overrides.pop("github_app_service_override", None)
     assert response.status_code == 201
-    assert response.json()["github"]["repository"] == "astra"
+    assert response.json()["github"] == {
+        "provider": "github",
+        "organization": "souriesh",
+        "repository": "MCP-Capstone",
+        "repository_id": "1142228151",
+        "default_branch": "main",
+        "installation_id": "167959604",
+    }
+
+
+def test_github_repository_selection_must_be_available_to_installation():
+    class FakeGitHubService:
+        def resolve_repository_for_installation(self, installation_id, repository_id):
+            raise ValueError("Selected GitHub repository is not available to this installation")
+
+    app.dependency_overrides["github_app_service_override"] = FakeGitHubService()
+    try:
+        payload = project_payload(project_id="PROJ_GITHUB_DENIED")
+        payload["github"] = {
+            "provider": "github",
+            "installation_id": "98765",
+            "repository_id": "not-installed",
+        }
+        response = client.post("/api/v1/management/projects", json=payload)
+    finally:
+        app.dependency_overrides.pop("github_app_service_override", None)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Selected GitHub repository is not available to this installation"
 
 
 def test_jira_metadata():

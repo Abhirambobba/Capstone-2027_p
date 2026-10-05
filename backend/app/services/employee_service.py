@@ -29,6 +29,10 @@ class EmployeeCognitoIdentityAlreadyLinkedError(Exception):
     pass
 
 
+class EmployeeGitHubIdentityAlreadyLinkedError(Exception):
+    pass
+
+
 class EmployeeService:
     def __init__(self, repository: EmployeeRepository):
         self.repository = repository
@@ -37,6 +41,8 @@ class EmployeeService:
         cognito_user_id = request.auth.cognito_user_id
         if cognito_user_id:
             self._ensure_cognito_identity_available(cognito_user_id)
+        if request.github and request.github.user_id:
+            self._ensure_github_identity_available(request.github.user_id)
         timestamp = iso_timestamp(utc_now())
         item = request.model_dump(mode="json")
         if cognito_user_id:
@@ -79,8 +85,25 @@ class EmployeeService:
             cognito_user_id = fields["auth"]["cognito_user_id"]
             self._ensure_cognito_identity_available(cognito_user_id, employee_id)
             fields["cognito_user_id"] = cognito_user_id
+        github = fields.get("github")
+        if github and github.get("user_id"):
+            self._ensure_github_identity_available(github["user_id"], employee_id)
+        remove_fields = []
+        if github:
+            existing = self.repository.get(employee_id) or {}
+            existing_github = existing.get("github") or {}
+            fields["github"] = {
+                "user_id": github.get("user_id", existing_github.get("user_id")),
+                "login": github.get("login", existing_github.get("login")),
+            }
+        if "github" in fields:
+            github_user_id = (fields["github"] or {}).get("user_id")
+            if github_user_id:
+                fields["github_user_id"] = str(github_user_id)
+            else:
+                remove_fields.append("github_user_id")
         fields["updated_at"] = iso_timestamp(utc_now())
-        item = self.repository.update(employee_id, fields)
+        item = self.repository.update(employee_id, fields, remove_fields=remove_fields)
         if item is None:
             raise EmployeeNotFoundError
         return Employee.model_validate(item)
@@ -91,6 +114,13 @@ class EmployeeService:
         linked_employee = self.repository.find_by_cognito_user_id(cognito_user_id)
         if linked_employee and linked_employee["employee_id"] != employee_id:
             raise EmployeeCognitoIdentityAlreadyLinkedError
+
+    def _ensure_github_identity_available(
+        self, github_user_id: str, employee_id: str | None = None
+    ) -> None:
+        linked_employee = self.repository.find_by_github_user_id(github_user_id)
+        if linked_employee and linked_employee["employee_id"] != employee_id:
+            raise EmployeeGitHubIdentityAlreadyLinkedError
 
     def register_agent(self, request: AgentRegisterRequest) -> Employee:
         employee = self.get(request.employee_id)

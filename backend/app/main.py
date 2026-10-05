@@ -7,6 +7,7 @@ from mangum import Mangum
 
 from app.api.employees import router as employee_router
 from app.api.integrations import router as integrations_router
+from app.api.github_integrations import router as github_integrations_router
 from app.api.me import router as me_router
 from app.api.memberships import router as membership_router
 from app.api.projects import router as project_router
@@ -24,6 +25,7 @@ app.include_router(membership_router)
 app.include_router(task_router)
 app.include_router(me_router)
 app.include_router(integrations_router)
+app.include_router(github_integrations_router)
 
 handler = Mangum(app)
 

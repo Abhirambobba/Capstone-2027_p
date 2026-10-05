@@ -30,15 +30,23 @@ class FakeRepository:
         last = {"employee_id": selected[-1]} if start + limit < len(keys) else None
         return [self.items[key] for key in selected], last
 
-    def update(self, employee_id, fields):
+    def update(self, employee_id, fields, remove_fields=None):
         if employee_id not in self.items:
             return None
         self.items[employee_id].update(fields)
+        for field in remove_fields or []:
+            self.items[employee_id].pop(field, None)
         return self.items[employee_id]
 
     def find_by_device_id(self, device_id):
         for item in self.items.values():
             if item.get("agent", {}).get("device_id") == device_id:
+                return item
+        return None
+
+    def find_by_github_user_id(self, github_user_id):
+        for item in self.items.values():
+            if (item.get("github") or {}).get("user_id") == github_user_id:
                 return item
         return None
 
@@ -113,6 +121,38 @@ def test_update_employee():
     assert response.json()["name"] == "Jane Doe"
     assert response.json()["employment_status"] == "ON_LEAVE"
     assert response.json()["department"] == "Engineering"
+
+
+def test_employee_github_identity_is_unique():
+    first = employee_payload("EMP_001")
+    first["github"] = {"user_id": "101", "login": "astra-author"}
+    second = employee_payload("EMP_002")
+    second["github"] = {"user_id": "101", "login": "same-account"}
+
+    assert client.post("/api/v1/management/employees", json=first).status_code == 201
+    response = client.post("/api/v1/management/employees", json=second)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "GitHub user is already linked"
+
+
+def test_employee_github_identity_update_does_not_store_installations():
+    created = employee_payload()
+    created["github"] = {
+        "user_id": "101",
+        "login": "old-login",
+        "installations": [{"installation_id": "98765", "account_login": "astra-org", "account_type": "Organization"}],
+    }
+    client.post("/api/v1/management/employees", json=created)
+
+    response = client.patch(
+        "/api/v1/management/employees/EMP_001",
+        json={"github": {"user_id": "101", "login": "new-login"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["github"]["login"] == "new-login"
+    assert response.json()["github"] == {"user_id": "101", "login": "new-login"}
 
 
 def test_list_employees():

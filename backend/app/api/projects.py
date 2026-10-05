@@ -24,6 +24,8 @@ from app.services.project_service import (
     ProjectOwnerNotFoundError,
     ProjectService,
 )
+from app.services.github_app_service import get_github_app_service
+from app.services.github_app_service import GitHubAppError
 
 
 def resolve_project_service() -> ProjectService:
@@ -58,6 +60,7 @@ def get_project_service() -> ProjectService:
         project_repository=ProjectRepository(get_projects_table()),
         employee_repository=EmployeeRepository(get_employees_table()),
         jira_service=jira_service,
+        github_service=get_github_app_service(),
     )
 
 
@@ -90,6 +93,12 @@ def create_project(
 ):
     try:
         project = service.create(request, employee_id=current_user.employee_id)
+    except GitHubAppError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     except ProjectAlreadyExistsError as error:
         raise HTTPException(status_code=409, detail="Project already exists") from error
     except ProjectOwnerNotFoundError as error:
@@ -153,6 +162,12 @@ def update_project(
 ):
     try:
         return service.update(project_id, request, employee_id=current_user.employee_id)
+    except GitHubAppError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     except ProjectNotFoundError as error:
         raise HTTPException(status_code=404, detail="Project not found") from error
     except ProjectOwnerNotFoundError as error:

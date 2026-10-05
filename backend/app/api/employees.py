@@ -21,6 +21,7 @@ from app.repositories.employee_repository import (
 )
 from app.services.employee_service import (
     EmployeeCognitoIdentityAlreadyLinkedError,
+    EmployeeGitHubIdentityAlreadyLinkedError,
     EmployeeNotFoundError,
     EmployeeService,
 )
@@ -59,6 +60,8 @@ def create_employee(
         raise HTTPException(status_code=409, detail="Employee already exists") from error
     except (EmployeeCognitoIdentityAlreadyLinkedError, EmployeeIdentityConflictError) as error:
         raise HTTPException(status_code=409, detail="Cognito user is already linked") from error
+    except EmployeeGitHubIdentityAlreadyLinkedError as error:
+        raise HTTPException(status_code=409, detail="GitHub user is already linked") from error
     except (EmployeeRepositoryValidationError, EmployeeTableUnavailableError) as error:
         handle_repository_error(error)
     logger.info("employee_created", extra={"employee_id": employee.employee_id})
@@ -112,6 +115,8 @@ def update_employee(
         return service.update(employee_id, request)
     except (EmployeeCognitoIdentityAlreadyLinkedError, EmployeeIdentityConflictError) as error:
         raise HTTPException(status_code=409, detail="Cognito user is already linked") from error
+    except EmployeeGitHubIdentityAlreadyLinkedError as error:
+        raise HTTPException(status_code=409, detail="GitHub user is already linked") from error
     except EmployeeNotFoundError as error:
         raise HTTPException(status_code=404, detail="Employee not found") from error
     except (EmployeeRepositoryValidationError, EmployeeTableUnavailableError) as error:

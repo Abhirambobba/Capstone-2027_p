@@ -1,12 +1,14 @@
 from datetime import datetime, timezone
 
 from app.models.project import (
+    GitHubConfig,
     ProjectCreateRequest,
     ProjectPage,
     ProjectResponse,
     ProjectUpdateRequest,
 )
 from app.services.jira_oauth_service import JiraOAuthService, get_jira_oauth_service
+from app.services.github_app_service import get_github_app_service
 from app.repositories.employee_repository import (
     EmployeeRepository,
     EmployeeRepositoryValidationError,
@@ -41,15 +43,18 @@ class ProjectService:
         project_repository: ProjectRepository,
         employee_repository: EmployeeRepository,
         jira_service: JiraOAuthService | None = None,
+        github_service=None,
     ):
         self.project_repository = project_repository
         self.employee_repository = employee_repository
         self.jira_service = jira_service or get_jira_oauth_service()
+        self.github_service = github_service or get_github_app_service()
 
     def create(
         self, request: ProjectCreateRequest, employee_id: str | None = None
     ) -> ProjectResponse:
         self._verify_owner(request.owner_employee_id)
+        request = self._normalize_github_metadata(request)
         request = self._normalize_jira_metadata(request, employee_id)
         timestamp = utc_timestamp()
         item = request.model_dump(mode="json", exclude_none=True)
@@ -76,6 +81,9 @@ class ProjectService:
         fields = request.model_dump(exclude_unset=True, mode="json")
         if "owner_employee_id" in fields:
             self._verify_owner(fields["owner_employee_id"])
+        if "github" in fields:
+            request = self._normalize_github_metadata(request)
+            fields = request.model_dump(exclude_unset=True, mode="json")
         if "jira" in fields:
             request = self._normalize_jira_metadata(request, employee_id)
             fields = request.model_dump(exclude_unset=True, mode="json")
@@ -84,6 +92,38 @@ class ProjectService:
         if item is None:
             raise ProjectNotFoundError
         return ProjectResponse.model_validate(item)
+
+    def _normalize_github_metadata(self, request):
+        if request.github is None:
+            return request
+
+        repository_id = request.github.repository_id
+        installation_id = request.github.installation_id
+        github_service = self.github_service
+        try:
+            from app.main import app
+        except Exception:  # pragma: no cover - import-time safety for isolated contexts
+            app = None
+
+        if app is not None:
+            override = app.dependency_overrides.get("github_app_service_override")
+            if override is not None:
+                resolved = override() if callable(override) else override
+                if hasattr(resolved, "resolve_repository_for_installation"):
+                    github_service = resolved
+
+        repository = github_service.resolve_repository_for_installation(
+            installation_id, repository_id
+        )
+        request.github = GitHubConfig(
+            provider="github",
+            organization=repository["organization"],
+            repository=repository["repository"],
+            repository_id=repository["repository_id"],
+            default_branch=repository["default_branch"],
+            installation_id=repository["installation_id"],
+        )
+        return request
 
     def _normalize_jira_metadata(self, request, employee_id: str | None):
         if request.jira is None:

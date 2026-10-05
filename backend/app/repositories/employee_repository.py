@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import base64
 import json
 from typing import Any
 
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
 
@@ -27,6 +29,9 @@ class EmployeeRepository:
         self.table = table
 
     def create(self, item: dict[str, Any]) -> dict[str, Any]:
+        github_user_id = (item.get("github") or {}).get("user_id")
+        if github_user_id:
+            item["github_user_id"] = str(github_user_id)
         try:
             self.table.put_item(
                 Item=item,
@@ -72,6 +77,21 @@ class EmployeeRepository:
             if not exclusive_start_key:
                 return matched_item
 
+    def find_by_github_user_id(self, github_user_id: str) -> dict[str, Any] | None:
+        try:
+            response = self.table.query(
+                IndexName="GitHubUserIndex",
+                KeyConditionExpression=Key("github_user_id").eq(github_user_id),
+                Limit=2,
+            )
+        except ClientError as error:
+            self._raise_for_client_error(error)
+            raise
+        items = response.get("Items", [])
+        if len(items) > 1:
+            raise EmployeeIdentityConflictError
+        return items[0] if items else None
+
     def list(self, limit: int, exclusive_start_key: dict[str, Any] | None):
         parameters: dict[str, Any] = {"Limit": limit}
         if exclusive_start_key:
@@ -83,23 +103,31 @@ class EmployeeRepository:
             raise
         return response.get("Items", []), response.get("LastEvaluatedKey")
 
-    def update(self, employee_id: str, fields: dict[str, Any]) -> dict[str, Any] | None:
-        if not fields:
+    def update(
+        self,
+        employee_id: str,
+        fields: dict[str, Any],
+        remove_fields: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        remove_fields = remove_fields or []
+        if not fields and not remove_fields:
             return self.get(employee_id)
 
-        expression_names = {f"#{field}": field for field in fields}
+        expression_names = {f"#{field}": field for field in [*fields, *remove_fields]}
         expression_values = {
             f":{field}": value for field, value in fields.items()
         }
-        assignments = ", ".join(
-            f"#{field} = :{field}" for field in fields
-        )
+        clauses = []
+        if fields:
+            clauses.append("SET " + ", ".join(f"#{field} = :{field}" for field in fields))
+        if remove_fields:
+            clauses.append("REMOVE " + ", ".join(f"#{field}" for field in remove_fields))
         try:
             response = self.table.update_item(
                 Key={"employee_id": employee_id},
-                UpdateExpression=f"SET {assignments}",
+                UpdateExpression=" ".join(clauses),
                 ExpressionAttributeNames=expression_names,
-                ExpressionAttributeValues=expression_values,
+                **({"ExpressionAttributeValues": expression_values} if expression_values else {}),
                 ConditionExpression="attribute_exists(employee_id)",
                 ReturnValues="ALL_NEW",
             )
